@@ -2,6 +2,14 @@
 
 MolView is a browser-based molecular viewer for Open Quantum Platform workflows. It is designed as a GUI-style web experience for inspecting optimized structures, OpenQP log/JSON output, Molden molecular orbitals, cube volumetric grids, and simple XYZ geometries.
 
+## Live Webpage
+
+Use MolView in the browser at:
+
+https://open-quantum-platform.github.io/MolView/
+
+This link is active when GitHub Pages is enabled for the repository from the `main` branch and repository root.
+
 ## Installation
 
 Clone the repository:
