@@ -72,7 +72,7 @@ The **Generate XYZ from current geometry** button exports the currently displaye
 
 ## Deployment
 
-OpenqpView can be hosted by any static web server.
+OpenqpView can be hosted by any static web server. This repository includes a GitHub Pages workflow at `.github/workflows/pages.yml` that deploys the static app whenever changes are pushed to `main`.
 
 Common options:
 
