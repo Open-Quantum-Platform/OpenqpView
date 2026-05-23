@@ -1,7 +1,7 @@
 {
-  "name": "MolView",
-  "short_name": "MolView",
-  "description": "A responsive molecule viewer for web pages.",
+  "name": "OpenqpView",
+  "short_name": "OpenqpView",
+  "description": "A responsive OpenQP molecular viewer for web pages.",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#071113",

@@ -1,4 +1,4 @@
-const CACHE_NAME = "molview-v59";
+const CACHE_NAME = "openqpview-v60";
 const ASSETS = [
   "./",
   "index.html",

@@ -1,12 +1,12 @@
-# MolView
+# OpenqpView
 
-MolView is a browser-based molecular viewer for Open Quantum Platform workflows. It is designed as a GUI-style web experience for inspecting optimized structures, OpenQP log/JSON output, Molden molecular orbitals, cube volumetric grids, and simple XYZ geometries.
+OpenqpView is a browser-based molecular viewer for Open Quantum Platform workflows. It is designed as a GUI-style web experience for inspecting optimized structures, OpenQP log/JSON output, Molden molecular orbitals, cube volumetric grids, and simple XYZ geometries.
 
 ## Live Webpage
 
-Use MolView in the browser at:
+Use OpenqpView in the browser at:
 
-https://open-quantum-platform.github.io/MolView/
+https://open-quantum-platform.github.io/OpenqpView/
 
 This link is active when GitHub Pages is enabled for the repository from the `main` branch and repository root.
 
@@ -15,11 +15,11 @@ This link is active when GitHub Pages is enabled for the repository from the `ma
 Clone the repository:
 
 ```sh
-git clone https://github.com/Open-Quantum-Platform/MolView.git
-cd MolView
+git clone https://github.com/Open-Quantum-Platform/OpenqpView.git
+cd OpenqpView
 ```
 
-MolView is a static web app. It does not require a build step or a backend server.
+OpenqpView is a static web app. It does not require a build step or a backend server.
 
 ## Run Locally
 
@@ -58,11 +58,11 @@ Use the `Input Data` chooser in the right panel, or drop a `.log`, `.json`, `.mo
 
 ## Molecular Orbitals
 
-MolView can populate the MO selector from OpenQP logs, OpenQP JSON, Molden files, and cube files. True isosurface rendering needs volumetric scalar data or enough basis information to generate a grid:
+OpenqpView can populate the MO selector from OpenQP logs, OpenQP JSON, Molden files, and cube files. True isosurface rendering needs volumetric scalar data or enough basis information to generate a grid:
 
 - `.cube`/`.cub` files render directly.
-- `.molden` files provide basis and MO coefficients, so MolView evaluates the orbital on a 3D grid and renders marching-cubes surfaces.
-- OpenQP `.log` and `.json` files provide orbital metadata and coefficients; if a matching Molden sample is available, MolView can use it to generate the surface.
+- `.molden` files provide basis and MO coefficients, so OpenqpView evaluates the orbital on a 3D grid and renders marching-cubes surfaces.
+- OpenQP `.log` and `.json` files provide orbital metadata and coefficients; if a matching Molden sample is available, OpenqpView can use it to generate the surface.
 
 The orbital controls include transparent, solid, and wire surface modes, adjustable isovalue, MO size, and separate blue/pink opacity controls.
 
@@ -72,7 +72,7 @@ The **Generate XYZ from current geometry** button exports the currently displaye
 
 ## Deployment
 
-MolView can be hosted by any static web server.
+OpenqpView can be hosted by any static web server.
 
 Common options:
 
@@ -122,7 +122,7 @@ At the moment, MO rendering imports Three.js from `https://esm.sh`, so internet 
 }
 ```
 
-MolView recognizes all currently named elements from `H` through `Og`. Common organic elements use tuned CPK-style colors and radii; the rest use periodic-group defaults for color, covalent radius, and VDW radius.
+OpenqpView recognizes all currently named elements from `H` through `Og`. Common organic elements use tuned CPK-style colors and radii; the rest use periodic-group defaults for color, covalent radius, and VDW radius.
 
 ## Next Milestones
 
