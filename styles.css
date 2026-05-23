@@ -17,13 +17,18 @@
   box-sizing: border-box;
 }
 
+html {
+  min-height: 100%;
+}
+
 [hidden] {
   display: none !important;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
   background:
     radial-gradient(circle at 16% 10%, rgba(134, 183, 255, 0.2), transparent 26rem),
     radial-gradient(circle at 78% 14%, rgba(255, 122, 184, 0.18), transparent 22rem),
@@ -35,6 +40,7 @@ button,
 input,
 textarea {
   font: inherit;
+  min-width: 0;
 }
 
 button {
@@ -51,7 +57,8 @@ button:hover {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
@@ -125,11 +132,14 @@ h1 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
   gap: 16px;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
 }
 
 .viewer-panel,
 .control-panel {
+  min-width: 0;
   background: rgba(17, 23, 45, 0.9);
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
@@ -138,7 +148,7 @@ h1 {
 .viewer-panel {
   position: relative;
   overflow: hidden;
-  min-height: 540px;
+  min-height: 0;
   border-radius: 8px;
   background: #030515;
   border-color: rgba(134, 183, 255, 0.22);
@@ -218,6 +228,7 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -257,6 +268,12 @@ h2 {
   height: 1px;
   opacity: 0;
   pointer-events: none;
+}
+
+.file-drop span {
+  max-width: 100%;
+  padding: 0 10px;
+  overflow-wrap: anywhere;
 }
 
 .file-drop.dragging {
@@ -299,13 +316,15 @@ h2 {
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
 .style-choice,
 .surface-choice {
   padding: 0 10px;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .control-row {
@@ -315,6 +334,10 @@ h2 {
   gap: 14px;
   min-height: 44px;
   color: var(--muted);
+}
+
+.control-row > span {
+  min-width: 0;
 }
 
 .polish-control input[type="range"] {
@@ -432,6 +455,7 @@ input[type="checkbox"] {
 }
 
 select {
+  min-width: 0;
   min-height: 42px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -467,6 +491,8 @@ textarea {
 .secondary-action {
   width: 100%;
   background: #18213c;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 #statusText.error {
@@ -474,6 +500,15 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  body {
+    overflow: auto;
+  }
+
+  .app-shell {
+    height: auto;
+    min-height: 100dvh;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
   }
