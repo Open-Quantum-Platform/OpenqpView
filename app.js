@@ -1,25 +1,88 @@
-const ELEMENTS = {
+const PERIODIC_SYMBOLS = [
+  "", "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
+  "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar",
+  "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
+  "Ga", "Ge", "As", "Se", "Br", "Kr",
+  "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd",
+  "In", "Sn", "Sb", "Te", "I", "Xe",
+  "Cs", "Ba", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy",
+  "Ho", "Er", "Tm", "Yb", "Lu",
+  "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg",
+  "Tl", "Pb", "Bi", "Po", "At", "Rn",
+  "Fr", "Ra", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf",
+  "Es", "Fm", "Md", "No", "Lr",
+  "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds", "Rg", "Cn",
+  "Nh", "Fl", "Mc", "Lv", "Ts", "Og"
+];
+
+const ELEMENT_GROUPS = {
+  alkali: new Set(["Li", "Na", "K", "Rb", "Cs", "Fr"]),
+  alkaline: new Set(["Be", "Mg", "Ca", "Sr", "Ba", "Ra"]),
+  halogen: new Set(["F", "Cl", "Br", "I", "At", "Ts"]),
+  noble: new Set(["He", "Ne", "Ar", "Kr", "Xe", "Rn", "Og"]),
+  nonmetal: new Set(["H", "C", "N", "O", "P", "S", "Se"]),
+  metalloid: new Set(["B", "Si", "Ge", "As", "Sb", "Te", "Po"]),
+  lanthanide: new Set(["La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu"]),
+  actinide: new Set(["Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr"]),
+  postTransition: new Set(["Al", "Ga", "In", "Sn", "Tl", "Pb", "Bi", "Nh", "Fl", "Mc", "Lv"])
+};
+
+const ELEMENT_OVERRIDES = {
   H: { color: "#e7edf1", radius: 0.32, covalent: 0.31, vdw: 1.2 },
+  B: { color: "#ffb86c", radius: 0.44, covalent: 0.84, vdw: 1.92 },
   C: { color: "#6f7b84", radius: 0.48, covalent: 0.76, vdw: 1.7 },
   N: { color: "#2f74d6", radius: 0.46, covalent: 0.71, vdw: 1.55 },
   O: { color: "#d93b3f", radius: 0.46, covalent: 0.66, vdw: 1.52 },
-  S: { color: "#ffd84d", radius: 0.56, covalent: 1.05, vdw: 1.8 },
+  F: { color: "#8de66c", radius: 0.42, covalent: 0.57, vdw: 1.47 },
   P: { color: "#ff9a3c", radius: 0.56, covalent: 1.07, vdw: 1.8 },
-  Cl: { color: "#5fd66f", radius: 0.58, covalent: 1.02, vdw: 1.75 }
+  S: { color: "#ffd84d", radius: 0.56, covalent: 1.05, vdw: 1.8 },
+  Cl: { color: "#5fd66f", radius: 0.58, covalent: 1.02, vdw: 1.75 },
+  Br: { color: "#a66a3f", radius: 0.62, covalent: 1.2, vdw: 1.85 },
+  I: { color: "#8d63d6", radius: 0.7, covalent: 1.39, vdw: 1.98 },
+  He: { color: "#d9ffff", radius: 0.3, covalent: 0.28, vdw: 1.4 },
+  Ne: { color: "#bfefff", radius: 0.35, covalent: 0.58, vdw: 1.54 },
+  Ar: { color: "#9bd7ff", radius: 0.55, covalent: 1.06, vdw: 1.88 },
+  Fe: { color: "#d07a55", radius: 0.62, covalent: 1.24, vdw: 2.04 },
+  Co: { color: "#d88484", radius: 0.6, covalent: 1.18, vdw: 2.0 },
+  Ni: { color: "#7fb36a", radius: 0.6, covalent: 1.17, vdw: 1.97 },
+  Cu: { color: "#c88745", radius: 0.64, covalent: 1.32, vdw: 1.96 },
+  Zn: { color: "#8a99c7", radius: 0.62, covalent: 1.22, vdw: 2.01 },
+  Ag: { color: "#c8d4df", radius: 0.72, covalent: 1.45, vdw: 2.11 },
+  Au: { color: "#f4c542", radius: 0.72, covalent: 1.36, vdw: 2.14 },
+  Hg: { color: "#b8b8d8", radius: 0.66, covalent: 1.32, vdw: 2.23 },
+  U: { color: "#4ab16d", radius: 0.78, covalent: 1.96, vdw: 2.4 }
 };
+
+function elementDefaults(symbol) {
+  if (ELEMENT_OVERRIDES[symbol]) return ELEMENT_OVERRIDES[symbol];
+  let profile = { color: "#9aa4b2", covalent: 1.25, vdw: 2.0 };
+  if (ELEMENT_GROUPS.alkali.has(symbol)) profile = { color: "#b38cff", covalent: 1.75, vdw: 2.65 };
+  else if (ELEMENT_GROUPS.alkaline.has(symbol)) profile = { color: "#6ecbff", covalent: 1.45, vdw: 2.35 };
+  else if (ELEMENT_GROUPS.halogen.has(symbol)) profile = { color: "#72dc7a", covalent: 1.15, vdw: 1.9 };
+  else if (ELEMENT_GROUPS.noble.has(symbol)) profile = { color: "#8fe7ff", covalent: 1.0, vdw: 2.0 };
+  else if (ELEMENT_GROUPS.nonmetal.has(symbol)) profile = { color: "#d7dde8", covalent: 0.95, vdw: 1.8 };
+  else if (ELEMENT_GROUPS.metalloid.has(symbol)) profile = { color: "#efb56e", covalent: 1.2, vdw: 2.0 };
+  else if (ELEMENT_GROUPS.lanthanide.has(symbol)) profile = { color: "#ff9fd0", covalent: 1.75, vdw: 2.45 };
+  else if (ELEMENT_GROUPS.actinide.has(symbol)) profile = { color: "#7bd88f", covalent: 1.8, vdw: 2.45 };
+  else if (ELEMENT_GROUPS.postTransition.has(symbol)) profile = { color: "#9ab7c8", covalent: 1.45, vdw: 2.2 };
+  return {
+    color: profile.color,
+    radius: Math.min(0.8, Math.max(0.34, profile.covalent * 0.52)),
+    covalent: profile.covalent,
+    vdw: profile.vdw
+  };
+}
+
+const ELEMENTS = Object.fromEntries(
+  PERIODIC_SYMBOLS.slice(1).map((symbol) => [symbol, elementDefaults(symbol)])
+);
 
 const VDW_SCALE = 1.18;
 const DEFAULT_CAMERA_OFFSET = { x: 0.95, y: -1.05, z: 1.1 };
 
-const Z_TO_SYMBOL = {
-  1: "H",
-  6: "C",
-  7: "N",
-  8: "O",
-  15: "P",
-  16: "S",
-  17: "Cl"
-};
+const Z_TO_SYMBOL = Object.fromEntries(
+  PERIODIC_SYMBOLS.slice(1).map((symbol, index) => [index + 1, symbol])
+);
 
 const BOHR_TO_ANGSTROM = 0.529177210903;
 

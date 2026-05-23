@@ -122,7 +122,7 @@ At the moment, MO rendering imports Three.js from `https://esm.sh`, so internet 
 }
 ```
 
-Supported elements are `H`, `C`, `N`, `O`, `S`, `P`, and `Cl`.
+MolView recognizes all currently named elements from `H` through `Og`. Common organic elements use tuned CPK-style colors and radii; the rest use periodic-group defaults for color, covalent radius, and VDW radius.
 
 ## Next Milestones
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = "molview-v58";
+const CACHE_NAME = "molview-v59";
 const ASSETS = [
   "./",
   "index.html",
