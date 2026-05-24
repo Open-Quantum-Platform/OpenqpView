@@ -2737,6 +2737,23 @@ function looksLikeCube(text) {
   return origin.length >= 4 && axes.every((parts) => parts.length >= 4 && parts.every(Number.isFinite));
 }
 
+async function loadInitialUrlData() {
+  const params = new URLSearchParams(window.location.search);
+  const source = params.get("load");
+  if (!source) return;
+  const url = new URL(source, window.location.href);
+  if (url.origin !== window.location.origin) {
+    throw new Error("The load URL must be from the same site as OpenqpView.");
+  }
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Could not load ${source}: HTTP ${response.status}`);
+  }
+  const text = await response.text();
+  await loadTextByFormat(text, source.split("/").pop() || "loaded-data.txt");
+  setStatus(`Loaded ${source} from URL.`);
+}
+
 function volumeOptions() {
   return {
     isovalue: state.volumeData ? state.volumeData.maxAbs * state.isovalue : state.isovalue,
@@ -2752,6 +2769,7 @@ buildSampleButtons();
 attachEvents();
 resizeCanvas();
 setMolecule(SAMPLES[0]);
+loadInitialUrlData().catch((error) => setStatus(error.message, true));
 draw();
 
 if ("serviceWorker" in navigator) {

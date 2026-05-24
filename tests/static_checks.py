@@ -7,12 +7,16 @@ def read(name: str) -> str:
     return (ROOT / name).read_text()
 
 
-def test_paste_input_controls_exist():
+def test_unified_input_panel_controls_exist():
     html = read("index.html")
+    assert 'id="fileDrop"' in html
+    assert 'class="data-input-panel file-drop"' in html
+    assert 'id="logFileInput"' in html
     assert 'id="pasteDataInput"' in html
     assert 'id="loadPastedData"' in html
     assert 'id="clearPastedData"' in html
     assert 'aria-label="Paste molecular data"' in html
+    assert "or drop/paste OpenQP log, XYZ, JSON, Molden, or cube data" in html
 
 
 def test_paste_loader_reuses_file_parsing_order():
@@ -29,9 +33,11 @@ def test_paste_controls_have_styles():
     assert ".paste-data-input" in css
     assert ".paste-actions" in css
     assert ".paste-hint" in css
+    assert ".data-input-panel" in css
+    assert ".file-picker-button" in css
 
 
 if __name__ == "__main__":
-    for test in [test_paste_input_controls_exist, test_paste_loader_reuses_file_parsing_order, test_paste_controls_have_styles]:
+    for test in [test_unified_input_panel_controls_exist, test_paste_loader_reuses_file_parsing_order, test_paste_controls_have_styles]:
         test()
         print(f"PASS {test.__name__}")
