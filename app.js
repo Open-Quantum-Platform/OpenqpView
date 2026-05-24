@@ -2619,9 +2619,24 @@ function attachEvents() {
 
   const logFileInput = document.querySelector("#logFileInput");
   const fileDrop = document.querySelector("#fileDrop");
+  const pasteDataInput = document.querySelector("#pasteDataInput");
   logFileInput.addEventListener("change", () => {
     if (logFileInput.files?.[0]) {
       readLogFile(logFileInput.files[0]);
+    }
+  });
+  document.querySelector("#loadPastedData").addEventListener("click", () => {
+    loadPastedData().catch((error) => setStatus(error.message, true));
+  });
+  document.querySelector("#clearPastedData").addEventListener("click", () => {
+    pasteDataInput.value = "";
+    pasteDataInput.focus();
+    setStatus("Pasted data cleared.");
+  });
+  pasteDataInput.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      loadPastedData().catch((error) => setStatus(error.message, true));
     }
   });
   fileDrop.addEventListener("dragover", (event) => {
@@ -2677,17 +2692,7 @@ function readLogFile(file) {
   reader.addEventListener("load", () => {
     try {
       const text = String(reader.result || "");
-      if (/\.(cube|cub)$/i.test(file.name)) {
-        loadCubeText(text, file.name).catch((error) => setStatus(error.message, true));
-      } else if (/\.json$/i.test(file.name) || /^\s*\{/.test(text)) {
-        loadMoleculeJsonText(text, file.name).catch((error) => setStatus(error.message, true));
-      } else if (/\.xyz$/i.test(file.name) || /^\s*\d+\s*\r?\n/.test(text)) {
-        loadXyzText(text, file.name);
-      } else if (/^\s*\[Molden Format\]/i.test(text) || /\[MO\]/i.test(text)) {
-        loadMoldenText(text, file.name);
-      } else {
-        loadOpenQpLogText(text, file.name);
-      }
+      loadTextByFormat(text, file.name).catch((error) => setStatus(error.message, true));
     } catch (error) {
       setStatus(error.message, true);
     } finally {
@@ -2698,6 +2703,38 @@ function readLogFile(file) {
     setStatus(`Could not read ${file.name}.`, true);
   });
   reader.readAsText(file);
+}
+
+async function loadPastedData() {
+  const pasteDataInput = document.querySelector("#pasteDataInput");
+  const text = pasteDataInput.value.trim();
+  if (!text) {
+    throw new Error("Paste OpenQP log, XYZ, JSON, Molden, or cube text before loading.");
+  }
+  await loadTextByFormat(text, "pasted-data.txt");
+  setStatus("Loaded pasted molecular data.");
+}
+
+async function loadTextByFormat(text, fileName = "pasted-data.txt") {
+  if (/\.(cube|cub)$/i.test(fileName) || looksLikeCube(text)) {
+    await loadCubeText(text, fileName.replace(/\.txt$/i, ".cube"));
+  } else if (/\.json$/i.test(fileName) || /^\s*\{/.test(text)) {
+    await loadMoleculeJsonText(text, fileName);
+  } else if (/\.xyz$/i.test(fileName) || /^\s*\d+\s*\r?\n/.test(text)) {
+    loadXyzText(text, fileName.replace(/\.txt$/i, ".xyz"));
+  } else if (/^\s*\[Molden Format\]/i.test(text) || /\[MO\]/i.test(text)) {
+    loadMoldenText(text, fileName.replace(/\.txt$/i, ".molden"));
+  } else {
+    loadOpenQpLogText(text, fileName.replace(/\.txt$/i, ".log"));
+  }
+}
+
+function looksLikeCube(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 7) return false;
+  const origin = lines[2]?.trim().split(/\s+/).map(Number) || [];
+  const axes = [3, 4, 5].map((index) => lines[index]?.trim().split(/\s+/).map(Number) || []);
+  return origin.length >= 4 && axes.every((parts) => parts.length >= 4 && parts.every(Number.isFinite));
 }
 
 function volumeOptions() {

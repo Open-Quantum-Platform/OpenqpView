@@ -42,8 +42,14 @@
             <h2>Input Data</h2>
             <label class="file-drop" id="fileDrop">
               <input id="logFileInput" type="file" accept=".log,.out,.txt,.molden,.cube,.cub,.json,.xyz">
-              <span>Choose or drop OpenQP, Molden, or JSON</span>
+              <span>Choose or drop OpenQP, Molden, cube, JSON, or XYZ</span>
             </label>
+            <textarea id="pasteDataInput" class="paste-data-input" spellcheck="false" aria-label="Paste molecular data" placeholder="Paste OpenQP log, XYZ, JSON, Molden, or cube text here..."></textarea>
+            <div class="paste-actions">
+              <button id="loadPastedData" type="button">Load pasted data</button>
+              <button id="clearPastedData" class="secondary-action" type="button">Clear paste</button>
+            </div>
+            <p class="paste-hint">Pasted data stays in this browser; nothing is uploaded to a server.</p>
             <div class="metadata-grid compact-metadata" hidden>
               <span id="sourceName">Sample library</span>
               <span id="sourceMeta">Static molecule</span>

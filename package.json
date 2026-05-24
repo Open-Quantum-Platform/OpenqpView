@@ -5,7 +5,8 @@
   "description": "A responsive OpenQP molecular viewer for web pages.",
   "scripts": {
     "start": "python3 -m http.server 4173",
-    "serve": "python3 -m http.server 4173"
+    "serve": "python3 -m http.server 4173",
+    "test": "python3 tests/static_checks.py"
   },
   "keywords": [
     "molecule",

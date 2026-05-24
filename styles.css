@@ -281,6 +281,41 @@ h2 {
   border-color: var(--accent-2);
 }
 
+.paste-data-input {
+  width: 100%;
+  min-height: 126px;
+  max-height: 260px;
+  resize: vertical;
+  border: 1px solid rgba(134, 183, 255, 0.34);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #090d1f;
+  color: var(--ink);
+  line-height: 1.35;
+  scrollbar-color: rgba(134, 183, 255, 0.72) rgba(232, 238, 255, 0.1);
+}
+
+.paste-data-input::placeholder {
+  color: rgba(182, 191, 216, 0.72);
+}
+
+.paste-data-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(134, 183, 255, 0.14);
+}
+
+.paste-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.paste-hint {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .metadata-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
