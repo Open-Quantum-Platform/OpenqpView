@@ -1667,6 +1667,8 @@ async function createVolumeRenderer(host) {
   controls.dampingFactor = 0.08;
   controls.rotateSpeed = 0.78;
   controls.zoomSpeed = 0.7;
+  controls.autoRotate = Boolean(state.spin);
+  controls.autoRotateSpeed = 1.2;
 
   const hemisphere = new THREE.HemisphereLight(0xdcefff, 0x10151a, 1);
   scene.add(hemisphere);
@@ -1882,6 +1884,10 @@ async function createVolumeRenderer(host) {
     },
     updateLighting(light) {
       updateLighting(light);
+    },
+    setAutoSpin(enabled) {
+      controls.autoRotate = Boolean(enabled);
+      controls.update();
     },
     dispose() {
       cancelAnimationFrame(animationFrame);
@@ -2482,6 +2488,7 @@ function attachEvents() {
 
   document.querySelector("#toggleSpin").addEventListener("click", (event) => {
     state.spin = !state.spin;
+    state.volumeRenderer?.setAutoSpin(state.spin);
     event.currentTarget.classList.toggle("active", state.spin);
     setStatus(state.spin ? "Auto spin on." : "Auto spin off.");
   });

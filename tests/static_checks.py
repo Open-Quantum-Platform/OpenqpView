@@ -37,7 +37,19 @@ def test_paste_controls_have_styles():
     assert ".file-picker-button" in css
 
 
+def test_auto_spin_controls_volume_renderer():
+    js = read("app.js")
+    assert "setAutoSpin(enabled)" in js
+    assert "controls.autoRotate = Boolean(enabled);" in js
+    assert "state.volumeRenderer?.setAutoSpin(state.spin);" in js
+
+
 if __name__ == "__main__":
-    for test in [test_unified_input_panel_controls_exist, test_paste_loader_reuses_file_parsing_order, test_paste_controls_have_styles]:
+    for test in [
+        test_unified_input_panel_controls_exist,
+        test_paste_loader_reuses_file_parsing_order,
+        test_paste_controls_have_styles,
+        test_auto_spin_controls_volume_renderer,
+    ]:
         test()
         print(f"PASS {test.__name__}")
