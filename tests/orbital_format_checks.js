@@ -36,6 +36,7 @@ function functionSource(name) {
   "moldenCartesianShellPowers",
   "parseMoldenBasis",
   "parseMoldenOrbitals",
+  "moldenNumericRows",
   "moldenNumericSection",
   "parseMoldenVibrations",
   "parseOpenQpJsonBasis",
@@ -136,7 +137,38 @@ const actualCombinedMolden = fs.readFileSync(
 ).split(/\r?\n/);
 const actualMoldenBasis = parseMoldenBasis(actualCombinedMolden, 3);
 assert.strictEqual(parseMoldenOrbitals(actualCombinedMolden, 3, actualMoldenBasis.aoToAtom).length, 19);
-assert.strictEqual(parseMoldenVibrations(actualCombinedMolden, 3).modes.length, 3);
+const actualMoldenVibrations = parseMoldenVibrations(actualCombinedMolden, 3);
+assert.strictEqual(actualMoldenVibrations.modes.length, 3);
+assert(Math.abs(actualMoldenVibrations.modes[0].ir - 3.38976112) < 1e-8);
+assert(Math.abs(actualMoldenVibrations.modes[0].raman - 89.79482377) < 1e-8);
+assert(Math.abs(actualMoldenVibrations.modes[1].ir - 0.07655595) < 1e-8);
+assert(Math.abs(actualMoldenVibrations.modes[1].raman - 910.20024097) < 1e-8);
+assert(Math.abs(actualMoldenVibrations.modes[2].ir - 1.09464762) < 1e-8);
+assert(Math.abs(actualMoldenVibrations.modes[2].raman - 423.26163083) < 1e-8);
+
+const packedMoldenIntensities = parseMoldenVibrations(`
+[FREQ]
+100.0
+200.0
+[INT]
+1.0 2.0
+`.trim().split(/\r?\n/), 1);
+assert.strictEqual(packedMoldenIntensities.modes[0].ir, 1.0);
+assert.strictEqual(packedMoldenIntensities.modes[1].ir, 2.0);
+assert.strictEqual(packedMoldenIntensities.modes[0].raman, null);
+
+const legacyTwoColumnIntensities = parseMoldenVibrations(`
+[FREQ]
+100.0
+200.0
+[INT]
+1.0 10.0
+2.0 20.0
+`.trim().split(/\r?\n/), 1);
+assert.strictEqual(legacyTwoColumnIntensities.modes[0].ir, 1.0);
+assert.strictEqual(legacyTwoColumnIntensities.modes[0].raman, 10.0);
+assert.strictEqual(legacyTwoColumnIntensities.modes[1].ir, 2.0);
+assert.strictEqual(legacyTwoColumnIntensities.modes[1].raman, 20.0);
 
 const actualDysonJson = JSON.parse(fs.readFileSync(
   path.join(__dirname, "..", "samples", "water-ekt-dyson.json"), "utf8"

@@ -1352,8 +1352,16 @@ function parseMoldenVibrations(lines, atomCount) {
   if (!frequencies.length) {
     return OpenQPHessian.extractVibrations({}, atomCount);
   }
-  const infrared = moldenNumericSection(lines, /^\[INT\]$/i);
-  const raman = moldenNumericSection(lines, /^\[(RAMAN|RAMAN-ACTIVITY)\]$/i);
+  const intensityRows = moldenNumericRows(lines, /^\[INT\]$/i);
+  const hasOneIntensityRowPerMode = intensityRows.length === frequencies.length;
+  const infrared = hasOneIntensityRowPerMode
+    ? intensityRows.map((row) => row[0])
+    : intensityRows.flat();
+  const inlineRaman = hasOneIntensityRowPerMode
+    ? intensityRows.map((row) => row.length > 1 ? row[1] : null)
+    : [];
+  const separateRaman = moldenNumericSection(lines, /^\[(RAMAN|RAMAN-ACTIVITY)\]$/i);
+  const raman = separateRaman.length ? separateRaman : inlineRaman;
   const modes = [];
   const start = lines.findIndex((line) => /^\[FR-NORM-COORD\]$/i.test(line.trim()));
   if (start >= 0) {
@@ -1383,19 +1391,23 @@ function parseMoldenVibrations(lines, atomCount) {
 }
 
 function moldenNumericSection(lines, headerPattern) {
+  return moldenNumericRows(lines, headerPattern).flat();
+}
+
+function moldenNumericRows(lines, headerPattern) {
   const start = lines.findIndex((line) => headerPattern.test(line.trim()));
   if (start < 0) return [];
-  const values = [];
+  const rows = [];
   for (let index = start + 1; index < lines.length; index += 1) {
     const line = lines[index].trim();
     if (/^\[/.test(line)) break;
     if (!line) continue;
-    line.split(/\s+/).forEach((token) => {
-      const value = OpenQPHessian.numericValue(token);
-      if (Number.isFinite(value)) values.push(value);
-    });
+    const values = line.split(/\s+/)
+      .map(OpenQPHessian.numericValue)
+      .filter(Number.isFinite);
+    if (values.length) rows.push(values);
   }
-  return values;
+  return rows;
 }
 
 async function loadOpenQpLogText(text, fileName) {
