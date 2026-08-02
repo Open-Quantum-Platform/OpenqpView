@@ -46,7 +46,7 @@ If you have Node/npm available, `npm run start` runs the same command. Because t
 
 ## Supported Files
 
-Use the `Input Data` chooser in the right panel, or drop a `.log`, `.json`, `.molden`, `.cube`, `.cub`, or `.xyz` file onto it. Current OpenQP JSON files contain a portable basis plus AO-ordered SCF and MRSF-EKT Dyson orbitals, while Hessian JSON also carries frequencies, displacement vectors, IR/Raman data, and Hessian metadata. Current OpenQP Molden output combines `[Atoms]`, `[GTO]`, `[MO]`, `[FREQ]`, `[INT]`, `[FR-COORD]`, and `[FR-NORM-COORD]` in one file. OpenqpView therefore keeps MO/Dyson surfaces and normal-mode controls available from the same JSON or Molden result.
+Use the `Input Data` chooser in the right panel, or drop a `.log`, `.json`, `.molden`, `.cube`, `.cub`, or `.xyz` file onto it. Current OpenQP JSON files contain a portable basis plus AO-ordered SCF and MRSF-EKT Dyson orbitals, while Hessian JSON also carries frequencies, displacement vectors, IR/Raman data, and Hessian metadata. Current OpenQP Molden output combines `[Atoms]`, `[GTO]`, `[MO]`, `[FREQ]`, standard one-value-per-mode `[INT]`, optional `[RAMAN]`, `[FR-COORD]`, and `[FR-NORM-COORD]` sections in one file. OpenqpView therefore keeps MO/Dyson surfaces and normal-mode controls available from the same JSON or Molden result.
 
 | File type | Purpose |
 | --- | --- |
@@ -72,7 +72,7 @@ The orbital controls include transparent, solid, and wire surface modes, adjusta
 
 ## Frequencies and Normal Modes
 
-Load an OpenQP Hessian `.log`, `.hess.json`, or combined `.molden` file to open the frequency table. OpenqpView reads the log table/eigenvectors, portable JSON aliases, and Molden `[FREQ]`/`[INT]`/`[FR-NORM-COORD]` sections. Select any row to inspect its frequency, IR intensity, and Raman activity. Modes with displacement vectors can be played or paused, returned to equilibrium, scaled, sped up or slowed down, and displayed with direction arrows. Negative frequencies are shown with an `i` suffix.
+Load an OpenQP Hessian `.log`, `.hess.json`, or combined `.molden` file to open the frequency table. OpenqpView reads the log table/eigenvectors, portable JSON aliases, and Molden `[FREQ]`/`[INT]`/`[RAMAN]`/`[FR-NORM-COORD]` sections. Select any row to inspect its frequency, IR intensity, and Raman activity. Modes with displacement vectors can be played or paused, returned to equilibrium, scaled, sped up or slowed down, and displayed with direction arrows. Negative frequencies are shown with an `i` suffix.
 
 Use the example buttons, or open these URLs directly:
 
