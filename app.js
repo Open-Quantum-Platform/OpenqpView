@@ -620,8 +620,11 @@ async function setTrajectoryFrame(index, options = {}) {
     pauseVibrationAnimation();
     state.vibrationPhase = 0;
   }
-  if (frameChanged && state.volumeData) {
-    clearVolumeData();
+  if (frameChanged) {
+    orbitalRenderRequest += 1;
+    if (state.volumeData) {
+      clearVolumeData();
+    }
     state.selectedOrbital = null;
   }
   state.frameIndex = nextFrameIndex;
@@ -1141,9 +1144,10 @@ function parseMoldenAtoms(lines) {
 
 function parseMoldenBasis(lines, atomCount) {
   const start = lines.findIndex((line) => /^\[GTO\]/i.test(line.trim()));
-  if (start < 0) return { aoToAtom: [], basisFunctions: [] };
+  if (start < 0) return { aoToAtom: [], basisFunctions: [], supported: false, unsupportedShells: [] };
   const aoToAtom = [];
   const basisFunctions = [];
+  const unsupportedShells = new Set();
   let currentAtom = null;
 
   for (let i = start + 1; i < lines.length; i += 1) {
@@ -1169,6 +1173,7 @@ function parseMoldenBasis(lines, atomCount) {
         }
       }
       const components = cartesianShellPowers(shell);
+      if (!components.length) unsupportedShells.add(shell.toUpperCase());
       components.forEach((powers) => {
         aoToAtom.push(currentAtom);
         basisFunctions.push({ atomIndex: currentAtom, powers, primitives });
@@ -1176,7 +1181,9 @@ function parseMoldenBasis(lines, atomCount) {
       i += primitiveCount;
     }
   }
-  return { aoToAtom, basisFunctions };
+  return unsupportedShells.size
+    ? { aoToAtom: [], basisFunctions: [], supported: false, unsupportedShells: Array.from(unsupportedShells) }
+    : { aoToAtom, basisFunctions, supported: true, unsupportedShells: [] };
 }
 
 function cartesianShellPowers(shell) {
@@ -1307,6 +1314,12 @@ async function loadOpenQpLogText(text, fileName) {
 }
 
 async function autoLoadMatchingMoldenForMetadata(selectedIndex) {
+  const requestId = ++orbitalRenderRequest;
+  const requestedTrajectory = state.trajectory;
+  const requestedFrameIndex = state.frameIndex;
+  const requestedOrbitalFrameIndex = state.orbitalFrameIndex;
+  const requestedSourceFileName = state.sourceFileName;
+  const requestedOrbital = state.orbitals[selectedIndex];
   const sampleUrl = matchingMoldenUrl(state.sourceFileName);
   if (!sampleUrl) {
     setOrbitalStatus("This log has MO metadata only. Load the matching .molden file to generate the MO grid.", { log: true });
@@ -1317,13 +1330,31 @@ async function autoLoadMatchingMoldenForMetadata(selectedIndex) {
   if (!response.ok) {
     throw new Error(`Could not load matching Molden data: ${response.status}`);
   }
+  const moldenText = await response.text();
+  if (
+    requestId !== orbitalRenderRequest
+    || state.trajectory !== requestedTrajectory
+    || state.frameIndex !== requestedFrameIndex
+    || state.orbitalFrameIndex !== requestedOrbitalFrameIndex
+    || state.sourceFileName !== requestedSourceFileName
+    || state.selectedOrbital !== requestedOrbital
+    || !isOrbitalFrameActive()
+  ) {
+    return;
+  }
   const matchingFileName = sampleUrl.split("/").at(-1) || "matching.molden";
-  await loadMoldenText(await response.text(), matchingFileName, {
+  await loadMoldenText(moldenText, matchingFileName, {
     preserveView: true,
     keepTrajectory: true,
     keepVibrations: true,
-    preserveSource: true
+    preserveSource: true,
+    orbitalFrameIndex: requestedOrbitalFrameIndex
   });
+  if (requestId !== orbitalRenderRequest || state.frameIndex !== requestedFrameIndex) return;
+  if (state.orbitalRenderSource !== "molden") {
+    setOrbitalStatus("The matching Molden file contains unsupported G/H shells. Load a cube grid to render this orbital.", { log: true });
+    return;
+  }
   const nextIndex = Math.min(selectedIndex, state.orbitals.length - 1);
   orbitalSelect.value = String(nextIndex);
   state.selectedOrbital = state.orbitals[nextIndex];
@@ -1349,8 +1380,12 @@ async function loadMoldenText(text, fileName, options = {}) {
   state.moldenBasis = parsed.basis;
   state.orbitals = parsed.orbitals;
   state.selectedOrbital = null;
-  state.orbitalFrameIndex = options.keepTrajectory && state.trajectory.length ? state.frameIndex : null;
-  state.orbitalRenderSource = parsed.orbitals.length ? "molden" : "none";
+  state.orbitalFrameIndex = Number.isInteger(options.orbitalFrameIndex)
+    ? options.orbitalFrameIndex
+    : options.keepTrajectory && state.trajectory.length ? state.frameIndex : null;
+  state.orbitalRenderSource = parsed.orbitals.length
+    ? parsed.basis.supported === false ? "metadata" : "molden"
+    : "none";
   await setMolecule(parsed.molecule, {
     keepTrajectory: true,
     keepView: options.preserveView,
@@ -1367,7 +1402,10 @@ async function loadMoldenText(text, fileName, options = {}) {
   if (!options.preserveSource) {
     document.querySelector("#sourceName").textContent = fileName;
     state.sourceFileName = fileName;
-    document.querySelector("#sourceMeta").textContent = `Molden ${parsed.atomUnit}, ${parsed.orbitals.length} orbitals`;
+    const basisSummary = parsed.basis.unsupportedShells?.length
+      ? `, unsupported ${parsed.basis.unsupportedShells.join("/")} shell; MO metadata only`
+      : "";
+    document.querySelector("#sourceMeta").textContent = `Molden ${parsed.atomUnit}, ${parsed.orbitals.length} orbitals${basisSummary}`;
     setStatus(`Loaded Molden geometry and ${parsed.orbitals.length} orbitals from ${fileName}.`);
   }
 }
@@ -1998,6 +2036,9 @@ async function renderBasisOrbital(orbital) {
   }
   setOrbitalStatus(`Evaluating ${orbital.spin || ""} MO ${orbital.index} on a 3D grid...`);
   await new Promise((resolve) => requestAnimationFrame(resolve));
+  if (requestId !== orbitalRenderRequest || state.selectedOrbital !== orbital || !isOrbitalFrameActive()) {
+    return;
+  }
   const orbitalMolecule = state.vibrationBaseMolecule || state.molecule;
   const cube = buildBasisOrbitalVolume(orbitalMolecule, state.moldenBasis.basisFunctions, orbital);
   if (!cube.maxAbs || cube.maxAbs <= 0) {

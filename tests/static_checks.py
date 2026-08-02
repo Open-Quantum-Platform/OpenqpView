@@ -151,6 +151,20 @@ def test_log_orbitals_preserve_spin_and_supported_basis_accuracy():
     assert "parsed.basis.supported !== false" in js
 
 
+def test_molden_rejects_unsupported_shells_and_stale_matching_fetches():
+    js = read("app.js")
+    molden_basis = js[js.index("function parseMoldenBasis("):js.index("function cartesianShellPowers(")]
+    auto_load = js[js.index("async function autoLoadMatchingMoldenForMetadata("):js.index("function matchingMoldenUrl(")]
+    assert "unsupportedShells.add(shell.toUpperCase())" in molden_basis
+    assert "supported: false" in molden_basis
+    assert 'parsed.basis.supported === false ? "metadata" : "molden"' in js
+    assert "const requestedFrameIndex = state.frameIndex;" in auto_load
+    assert "state.trajectory !== requestedTrajectory" in auto_load
+    assert "state.frameIndex !== requestedFrameIndex" in auto_load
+    assert "requestId !== orbitalRenderRequest" in auto_load
+    assert "orbitalFrameIndex: requestedOrbitalFrameIndex" in auto_load
+
+
 def test_trajectory_keeps_modes_and_limits_mo_to_matching_frame():
     js = read("app.js")
     trajectory = js[js.index("async function setTrajectoryFrame("):js.index("function updateTrajectoryUi(")]
@@ -161,6 +175,11 @@ def test_trajectory_keeps_modes_and_limits_mo_to_matching_frame():
     assert "orbitalFrameIndex" in js
     assert "orbitalSelect.disabled = !isOrbitalFrameActive();" in js
     assert "This MO belongs to trajectory step" in js
+    assert "if (frameChanged)" in trajectory
+    assert "orbitalRenderRequest += 1;" in trajectory
+    render_orbital = js[js.index("async function renderBasisOrbital("):js.index("function buildBasisOrbitalVolume(")]
+    after_yield = render_orbital[render_orbital.index("await new Promise((resolve) => requestAnimationFrame(resolve));"):]
+    assert after_yield.index("requestId !== orbitalRenderRequest") < after_yield.index("buildBasisOrbitalVolume(")
 
 
 def test_hessian_assets_are_loaded_before_the_app():
@@ -187,6 +206,7 @@ if __name__ == "__main__":
         test_log_loading_preserves_webgl_until_parsing_succeeds,
         test_webgl_vdw_uses_element_radii_without_bonds,
         test_log_orbitals_preserve_spin_and_supported_basis_accuracy,
+        test_molden_rejects_unsupported_shells_and_stale_matching_fetches,
         test_trajectory_keeps_modes_and_limits_mo_to_matching_frame,
         test_hessian_assets_are_loaded_before_the_app,
     ]:
