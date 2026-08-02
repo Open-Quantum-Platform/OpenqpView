@@ -1353,8 +1353,13 @@ function parseMoldenVibrations(lines, atomCount) {
     return OpenQPHessian.extractVibrations({}, atomCount);
   }
   const intensityRows = moldenNumericRows(lines, /^\[INT\]$/i);
-  const infrared = intensityRows.map((row) => row[0]);
-  const inlineRaman = intensityRows.map((row) => row.length > 1 ? row[1] : null);
+  const hasOneIntensityRowPerMode = intensityRows.length === frequencies.length;
+  const infrared = hasOneIntensityRowPerMode
+    ? intensityRows.map((row) => row[0])
+    : intensityRows.flat();
+  const inlineRaman = hasOneIntensityRowPerMode
+    ? intensityRows.map((row) => row.length > 1 ? row[1] : null)
+    : [];
   const separateRaman = moldenNumericSection(lines, /^\[(RAMAN|RAMAN-ACTIVITY)\]$/i);
   const raman = separateRaman.length ? separateRaman : inlineRaman;
   const modes = [];
