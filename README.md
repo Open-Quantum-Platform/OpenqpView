@@ -62,8 +62,10 @@ Use the `Input Data` chooser in the right panel, or drop a `.log`, `.json`, `.mo
 OpenqpView can populate the MO selector from OpenQP logs, OpenQP JSON, Molden files, and cube files. True isosurface rendering needs volumetric scalar data or enough basis information to generate a grid:
 
 - `.cube`/`.cub` files render directly.
-- `.molden` files provide basis and MO coefficients, so OpenqpView evaluates the orbital on a 3D grid and renders marching-cubes surfaces.
-- Current OpenQP `.log` files provide basis details and AO-resolved MO coefficients, so OpenqpView can generate the MO surface directly from the log without a Molden sidecar. Older logs that omit basis details still load as MO metadata.
+- `.molden` files with Cartesian S–F basis functions provide basis and MO coefficients, so OpenqpView evaluates the orbital on a 3D grid and renders marching-cubes surfaces. Molden G/H shells remain metadata-only rather than producing an incomplete surface.
+- Current OpenQP `.log` files provide basis details and AO-resolved MO coefficients, so OpenqpView can generate Cartesian S–F MO surfaces directly from the log without a Molden sidecar. Alpha and Beta orbitals remain separate for unrestricted calculations. Logs with G/H shells, or older logs without basis details, still load the geometry, frequencies, and MO metadata but require a compatible S–F Molden file or cube grid for a surface.
+
+For optimization logs, direct MO coefficients are associated with the final geometry that produced them. Moving the optimization slider to another geometry clears the MO surface and temporarily disables the selector; returning to the matching final step enables it again. Frequency rows and normal-mode data remain available while inspecting trajectory steps.
 
 The orbital controls include transparent, solid, and wire surface modes, adjustable isovalue, MO size, and separate blue/pink opacity controls.
 
@@ -93,6 +95,7 @@ Common options:
 Upload these files and directories:
 
 - `index.html`
+- `hessian.js`
 - `app.js`
 - `styles.css`
 - `sw.js`
@@ -138,6 +141,6 @@ OpenqpView recognizes all currently named elements from `H` through `Og`. Common
 - Import common molecule formats such as MOL, SDF, and PDB.
 - Add bond-order rendering and a 2D sketcher.
 - Add angle and torsion measurement tools.
-- Improve Molden basis normalization and add higher angular momentum shell coverage.
+- Add direct G/H-shell orbital evaluation for OpenQP logs and improve Molden normalization coverage.
 - Add local project save/load and shareable web links.
 - Bundle Three.js locally for fully offline MO rendering.
