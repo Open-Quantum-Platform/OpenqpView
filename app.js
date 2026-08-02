@@ -148,13 +148,25 @@ const state = {
   isovalue: 0.07,
   surfaceSize: 1,
   positiveOpacity: 0.52,
-  negativeOpacity: 0.52
+  negativeOpacity: 0.52,
+  vibrations: [],
+  vibrationUnits: { frequency: "cm-1", ir: "km/mol", raman: "a.u." },
+  vibrationBaseMolecule: null,
+  selectedVibration: null,
+  vibrationPlaying: false,
+  vibrationAmplitude: 0.35,
+  vibrationSpeed: 1,
+  vibrationPhase: 0,
+  showModeVectors: true,
+  hessianSummary: null
 };
 let structureRenderRequest = 0;
 let orbitalRenderRequest = 0;
 let logEntries = [];
 let activeLogId = null;
 let restoringLog = false;
+let vibrationAnimationFrame = null;
+let vibrationLastTimestamp = 0;
 
 const canvas = document.querySelector("#molCanvas");
 const ctx = canvas.getContext("2d");
@@ -169,6 +181,11 @@ const isoRange = document.querySelector("#isoRange");
 const surfaceSizeRange = document.querySelector("#surfaceSizeRange");
 const positiveOpacity = document.querySelector("#positiveOpacity");
 const negativeOpacity = document.querySelector("#negativeOpacity");
+const vibrationPanel = document.querySelector("#vibrationPanel");
+const frequencyRows = document.querySelector("#frequencyRows");
+const vibrationPlay = document.querySelector("#vibrationPlay");
+const vibrationAmplitude = document.querySelector("#vibrationAmplitude");
+const vibrationSpeed = document.querySelector("#vibrationSpeed");
 let resizeResetFrame = null;
 
 function resizeCanvas(resetPosition = false) {
@@ -270,6 +287,8 @@ function draw() {
     ctx.stroke();
   });
 
+  drawNormalModeArrows2d(width, height, frameExtent, frameCenter);
+
   indexedPoints
     .sort((a, b) => a.z - b.z)
     .forEach((point) => drawAtom(point));
@@ -340,6 +359,48 @@ function drawAxisTriad(width, height) {
   ctx.restore();
 }
 
+function drawNormalModeArrows2d(width, height, extent, center) {
+  const mode = selectedVibrationMode();
+  const base = state.vibrationBaseMolecule;
+  if (!state.showModeVectors || !mode?.vectors?.length || !base?.atoms?.length) return;
+  const vectorScale = Math.max(0.24, state.vibrationAmplitude * 1.8);
+  ctx.save();
+  ctx.strokeStyle = "rgba(242, 196, 95, 0.9)";
+  ctx.fillStyle = "rgba(242, 196, 95, 0.95)";
+  ctx.lineWidth = 2.2;
+  mode.vectors.forEach((vector, index) => {
+    const atom = base.atoms[index];
+    if (!atom) return;
+    const magnitude = Math.hypot(vector.x, vector.y, vector.z);
+    if (magnitude < 1e-6) return;
+    const endAtom = [
+      atom[0],
+      atom[1] + vector.x * vectorScale,
+      atom[2] + vector.y * vectorScale,
+      atom[3] + vector.z * vectorScale
+    ];
+    const start = project(rotatePoint(atom), width, height, extent, center);
+    const end = project(rotatePoint(endAtom), width, height, extent, center);
+    const dx = end.sx - start.sx;
+    const dy = end.sy - start.sy;
+    const length = Math.hypot(dx, dy);
+    if (length < 3) return;
+    ctx.beginPath();
+    ctx.moveTo(start.sx, start.sy);
+    ctx.lineTo(end.sx, end.sy);
+    ctx.stroke();
+    const angle = Math.atan2(dy, dx);
+    const head = Math.min(8, Math.max(4, length * 0.22));
+    ctx.beginPath();
+    ctx.moveTo(end.sx, end.sy);
+    ctx.lineTo(end.sx - Math.cos(angle - 0.52) * head, end.sy - Math.sin(angle - 0.52) * head);
+    ctx.lineTo(end.sx - Math.cos(angle + 0.52) * head, end.sy - Math.sin(angle + 0.52) * head);
+    ctx.closePath();
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
 function rotateVector(x, y, z) {
   const cx = Math.cos(state.rotX);
   const sx = Math.sin(state.rotX);
@@ -392,6 +453,9 @@ function atomAnnotation(symbol, index) {
 }
 
 function setMolecule(molecule, options = {}) {
+  if (!options.keepVibrations) {
+    clearVibrationData({ restoreGeometry: false });
+  }
   state.molecule = normalizeMolecule(molecule);
   document.querySelector("#moleculeName").textContent = state.molecule.name;
   document.querySelector("#moleculeFormula").textContent = state.molecule.formula;
@@ -554,6 +618,195 @@ function updateTrajectoryUi() {
   document.querySelector("#convergenceLabel").textContent = frame.convergence
     ? `RMS grad ${frame.convergence.rmsGrad?.value ?? "?"}`
     : "Convergence unavailable";
+}
+
+function selectedVibrationMode() {
+  if (!Number.isInteger(state.selectedVibration)) return null;
+  return state.vibrations[state.selectedVibration] || null;
+}
+
+function formatFrequency(frequency, digits = 2) {
+  if (!Number.isFinite(frequency)) return "—";
+  return frequency < 0
+    ? `${Math.abs(frequency).toFixed(digits)}i`
+    : frequency.toFixed(digits);
+}
+
+function formatIntensity(value, digits = 2) {
+  return Number.isFinite(value) ? value.toFixed(digits) : "—";
+}
+
+function clearVibrationData(options = {}) {
+  const restoreGeometry = options.restoreGeometry !== false;
+  pauseVibrationAnimation();
+  if (restoreGeometry && state.vibrationBaseMolecule) {
+    state.molecule = normalizeMolecule(cloneMolecule(state.vibrationBaseMolecule));
+    updateMoleculeHud();
+    state.volumeRenderer?.updateMoleculeCoordinates?.(state.molecule);
+  }
+  state.vibrations = [];
+  state.vibrationUnits = { frequency: "cm-1", ir: "km/mol", raman: "a.u." };
+  state.vibrationBaseMolecule = null;
+  state.selectedVibration = null;
+  state.vibrationPhase = 0;
+  state.hessianSummary = null;
+  state.volumeRenderer?.setNormalMode?.(null);
+  updateVibrationUi();
+}
+
+function updateVibrationUi() {
+  const modes = state.vibrations;
+  vibrationPanel.hidden = modes.length === 0;
+  frequencyRows.replaceChildren();
+  if (!modes.length) return;
+
+  document.querySelector("#vibrationCount").textContent = `${modes.length} mode${modes.length === 1 ? "" : "s"}`;
+  const imaginaryCount = modes.filter((mode) => mode.frequency < 0).length;
+  document.querySelector("#imaginaryCount").textContent = `${imaginaryCount} imaginary`;
+
+  modes.forEach((mode, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "frequency-row frequency-mode";
+    button.classList.toggle("active", index === state.selectedVibration);
+    button.setAttribute("role", "row");
+    button.setAttribute("aria-selected", String(index === state.selectedVibration));
+    button.title = mode.vectors.length
+      ? `Animate normal mode ${mode.index}`
+      : `Frequency ${mode.index}; no displacement vectors in this file`;
+    const values = [
+      String(mode.index),
+      formatFrequency(mode.frequency),
+      formatIntensity(mode.ir),
+      formatIntensity(mode.raman)
+    ];
+    values.forEach((value, column) => {
+      const cell = document.createElement("span");
+      cell.setAttribute("role", "gridcell");
+      cell.textContent = value;
+      if (column === 0) cell.className = "mode-number";
+      if (column === 1 && mode.frequency < 0) cell.className = "imaginary-frequency";
+      button.appendChild(cell);
+    });
+    button.addEventListener("click", () => {
+      selectVibrationMode(index, { play: state.vibrationPlaying });
+      addLogEntry(`Normal mode ${mode.index} selected: ${formatFrequency(mode.frequency)} cm⁻¹.`);
+    });
+    frequencyRows.appendChild(button);
+  });
+
+  updateVibrationControls();
+}
+
+function updateVibrationControls() {
+  const mode = selectedVibrationMode();
+  const hasVectors = Boolean(mode?.vectors?.length);
+  vibrationPlay.disabled = !hasVectors;
+  vibrationPlay.textContent = state.vibrationPlaying ? "Pause" : "Play";
+  vibrationPlay.classList.toggle("active", state.vibrationPlaying);
+  document.querySelector("#vibrationStop").disabled = !hasVectors;
+  document.querySelector("#modeVectorToggle").disabled = !hasVectors;
+  vibrationAmplitude.disabled = !hasVectors;
+  vibrationSpeed.disabled = !hasVectors;
+  document.querySelector("#amplitudeValue").textContent = `${state.vibrationAmplitude.toFixed(2)} Å`;
+  document.querySelector("#speedValue").textContent = `${state.vibrationSpeed.toFixed(2)}×`;
+  document.querySelector("#frequencyLabel").textContent = mode
+    ? `Mode ${mode.index}: ${formatFrequency(mode.frequency)} cm⁻¹`
+    : "Frequency unavailable";
+  document.querySelector("#intensityLabel").textContent = mode
+    ? `IR ${formatIntensity(mode.ir)} ${state.vibrationUnits.ir} · Raman ${formatIntensity(mode.raman)} ${state.vibrationUnits.raman}`
+    : "Intensity unavailable";
+  document.querySelector("#vibrationStatus").textContent = !mode
+    ? "Choose a vibrational mode."
+    : hasVectors
+      ? `${state.vibrationPlaying ? "Animating" : "Ready to animate"} ${mode.frequency < 0 ? "imaginary " : ""}normal mode ${mode.index}.`
+      : "This result contains frequencies but no normal-mode displacement vectors.";
+}
+
+function selectVibrationMode(index, options = {}) {
+  if (!state.vibrations.length) return;
+  pauseVibrationAnimation();
+  state.selectedVibration = Math.max(0, Math.min(Number(index) || 0, state.vibrations.length - 1));
+  state.vibrationPhase = 0;
+  applyVibrationFrame();
+  syncNormalModeRenderer();
+  updateVibrationUi();
+  if (options.play && selectedVibrationMode()?.vectors?.length) {
+    startVibrationAnimation();
+  }
+}
+
+function applyVibrationFrame() {
+  const base = state.vibrationBaseMolecule;
+  const mode = selectedVibrationMode();
+  if (!base || !mode?.vectors?.length) return;
+  const phaseScale = Math.sin(state.vibrationPhase) * state.vibrationAmplitude;
+  const atoms = base.atoms.map((atom, index) => {
+    const vector = mode.vectors[index] || { x: 0, y: 0, z: 0 };
+    return [
+      atom[0],
+      atom[1] + vector.x * phaseScale,
+      atom[2] + vector.y * phaseScale,
+      atom[3] + vector.z * phaseScale
+    ];
+  });
+  state.molecule = {
+    ...base,
+    atoms,
+    bonds: base.bonds,
+    center: base.center,
+    extent: base.extent
+  };
+  state.volumeRenderer?.updateMoleculeCoordinates?.(state.molecule);
+}
+
+function syncNormalModeRenderer() {
+  const mode = selectedVibrationMode();
+  state.volumeRenderer?.setNormalMode?.(
+    state.vibrationBaseMolecule,
+    mode?.vectors || null,
+    Math.max(0.24, state.vibrationAmplitude * 1.8),
+    state.showModeVectors
+  );
+}
+
+function startVibrationAnimation() {
+  if (!selectedVibrationMode()?.vectors?.length || state.vibrationPlaying) return;
+  state.vibrationPlaying = true;
+  vibrationLastTimestamp = 0;
+  updateVibrationControls();
+  vibrationAnimationFrame = requestAnimationFrame(animateVibration);
+}
+
+function pauseVibrationAnimation() {
+  state.vibrationPlaying = false;
+  vibrationLastTimestamp = 0;
+  if (vibrationAnimationFrame !== null) {
+    cancelAnimationFrame(vibrationAnimationFrame);
+    vibrationAnimationFrame = null;
+  }
+  if (vibrationPlay) updateVibrationControls();
+}
+
+function stopVibrationAnimation() {
+  pauseVibrationAnimation();
+  state.vibrationPhase = 0;
+  applyVibrationFrame();
+  updateVibrationControls();
+}
+
+function animateVibration(timestamp) {
+  if (!state.vibrationPlaying) {
+    vibrationAnimationFrame = null;
+    return;
+  }
+  if (vibrationLastTimestamp) {
+    const elapsed = Math.min(50, timestamp - vibrationLastTimestamp);
+    state.vibrationPhase = (state.vibrationPhase + (elapsed / 1000) * state.vibrationSpeed * Math.PI * 1.3) % (Math.PI * 2);
+    applyVibrationFrame();
+  }
+  vibrationLastTimestamp = timestamp;
+  vibrationAnimationFrame = requestAnimationFrame(animateVibration);
 }
 
 function updateOrbitalUi() {
@@ -936,21 +1189,39 @@ function loadMoldenText(text, fileName, options = {}) {
 async function loadMoleculeJsonText(text, fileName) {
   const parsed = JSON.parse(text);
   const molecule = await moleculeFromJson(parsed, fileName);
-  const orbitals = parseOpenQpJsonOrbitals(jsonMoleculeSource(parsed), molecule.atoms.length);
+  const source = jsonMoleculeSource(parsed);
+  const orbitals = parseOpenQpJsonOrbitals(source, molecule.atoms.length);
+  let vibrationData = OpenQPHessian.extractVibrations(parsed, molecule.atoms.length);
+  if (!vibrationData.modes.length && source !== parsed) {
+    vibrationData = OpenQPHessian.extractVibrations(source, molecule.atoms.length);
+  }
+  const hessianSummary = OpenQPHessian.extractHessianSummary(parsed)
+    || (source !== parsed ? OpenQPHessian.extractHessianSummary(source) : null);
   setMolecule(molecule);
   state.trajectory = [];
   state.frameIndex = 0;
   state.orbitals = orbitals;
   state.selectedOrbital = null;
   state.orbitalRenderSource = orbitals.length ? "metadata" : "none";
+  state.vibrations = vibrationData.modes;
+  state.vibrationUnits = vibrationData.units;
+  state.vibrationBaseMolecule = vibrationData.modes.length ? cloneMolecule(state.molecule) : null;
+  state.selectedVibration = vibrationData.modes.length ? 0 : null;
+  state.hessianSummary = hessianSummary;
   updateTrajectoryUi();
   updateOrbitalUi();
+  updateVibrationUi();
   document.querySelector("#sourceName").textContent = fileName;
   state.sourceFileName = fileName;
-  document.querySelector("#sourceMeta").textContent = isOpenQpJson(parsed)
-    ? `OpenQP JSON geometry, ${orbitals.length} orbitals`
-    : "Molecule JSON";
-  setStatus(`Loaded molecule JSON from ${fileName}${orbitals.length ? ` with ${orbitals.length} orbitals` : ""}.`);
+  document.querySelector("#sourceMeta").textContent = vibrationData.modes.length || hessianSummary
+    ? `OpenQP Hessian JSON: ${vibrationData.modes.length} modes${hessianSummary ? `, ${hessianSummary.dimension} × ${hessianSummary.dimension} Hessian` : ""}`
+    : isOpenQpJson(parsed)
+      ? `OpenQP JSON geometry, ${orbitals.length} orbitals`
+      : "Molecule JSON";
+  if (vibrationData.modes.length) {
+    selectVibrationMode(0, { play: vibrationData.modes[0].vectors.length > 0 });
+  }
+  setStatus(`Loaded molecule JSON from ${fileName}${orbitals.length ? ` with ${orbitals.length} orbitals` : ""}${vibrationData.modes.length ? ` and ${vibrationData.modes.length} vibrational modes` : ""}.`);
 }
 
 async function moleculeFromJson(input, fileName = "molecule.json") {
@@ -1525,6 +1796,7 @@ async function renderStructureView(options = {}) {
     preserveView: Boolean(options.preserveView),
     framePadding: 2.2
   });
+  syncNormalModeRenderer();
 }
 
 async function renderMoldenOrbital(orbital) {
@@ -1690,11 +1962,13 @@ async function createVolumeRenderer(host) {
   const atomGroup = new THREE.Group();
   const annotationGroup = new THREE.Group();
   const axesGroup = new THREE.Group();
+  const normalModeGroup = new THREE.Group();
   const surfaceGroup = new THREE.Group();
   scene.add(surfaceGroup);
   scene.add(atomGroup);
   scene.add(annotationGroup);
   scene.add(axesGroup);
+  scene.add(normalModeGroup);
 
   let animationFrame = null;
   let positiveSurface = null;
@@ -1793,6 +2067,58 @@ async function createVolumeRenderer(host) {
     }
   }
 
+  function updateMoleculeSceneCoordinates(molecule) {
+    const atomMeshes = atomGroup.children.filter((child) => child.userData.materialKind === "atom");
+    if (atomMeshes.length !== molecule.atoms.length) {
+      setMoleculeScene(molecule, { preserveView: true, framePadding: 2.2 });
+      return;
+    }
+    currentMolecule = molecule;
+    atomGroup.children.forEach((child) => {
+      if (child.userData.materialKind === "atom") {
+        const atom = molecule.atoms[child.userData.atomIndex];
+        if (atom) child.position.set(atom[1], atom[2], atom[3]);
+        return;
+      }
+      if (child.userData.materialKind !== "bond") return;
+      const start = molecule.atoms[child.userData.bondStartIndex];
+      const end = molecule.atoms[child.userData.bondEndIndex];
+      if (!start || !end) return;
+      updateBondObject(THREE, child, start, end, child.userData.bondPart || "full");
+      Object.assign(child.userData, bondHoverInfo(start, end, child.userData.bondStartIndex, child.userData.bondEndIndex));
+    });
+    annotationGroup.children.forEach((sprite) => {
+      const atom = molecule.atoms[sprite.userData.atomIndex];
+      if (atom) sprite.position.set(atom[1], atom[2], atom[3]);
+    });
+  }
+
+  function setNormalModeVectors(molecule, vectors, scale, visible) {
+    clearGroup(normalModeGroup);
+    normalModeGroup.visible = Boolean(visible);
+    if (!molecule?.atoms?.length || !Array.isArray(vectors) || !vectors.length || !visible) return;
+    molecule.atoms.forEach((atom, index) => {
+      const vector = vectors[index];
+      if (!vector) return;
+      const direction = new THREE.Vector3(vector.x, vector.y, vector.z);
+      const magnitude = direction.length();
+      const length = magnitude * scale;
+      if (length < 0.025) return;
+      direction.normalize();
+      const origin = new THREE.Vector3(atom[1], atom[2], atom[3]);
+      const headLength = Math.min(0.18, Math.max(0.07, length * 0.3));
+      const headWidth = Math.min(0.11, Math.max(0.045, length * 0.17));
+      const arrow = new THREE.ArrowHelper(direction, origin, length, 0xf2c45f, headLength, headWidth);
+      arrow.traverse((child) => {
+        if (!child.material) return;
+        child.material.transparent = true;
+        child.material.opacity = 0.82;
+        child.material.depthWrite = false;
+      });
+      normalModeGroup.add(arrow);
+    });
+  }
+
   const api = {
     resize(resetPosition = false) {
       const rect = host.getBoundingClientRect();
@@ -1812,6 +2138,12 @@ async function createVolumeRenderer(host) {
       negativeSurface = null;
       setMoleculeScene(molecule, viewOptions);
       api.resize();
+    },
+    updateMoleculeCoordinates(molecule) {
+      updateMoleculeSceneCoordinates(molecule);
+    },
+    setNormalMode(molecule, vectors, scale = 0.6, visible = true) {
+      setNormalModeVectors(molecule, vectors, scale, visible);
     },
     clearSurfaces() {
       clearGroup(surfaceGroup);
@@ -1898,6 +2230,7 @@ async function createVolumeRenderer(host) {
       clearGroup(atomGroup);
       clearGroup(annotationGroup);
       clearGroup(axesGroup);
+      clearGroup(normalModeGroup);
       clearGroup(surfaceGroup);
       host.replaceChildren();
     }
@@ -2001,11 +2334,11 @@ function smoothGeometryNormals(geometry) {
 function addMoleculeToScene(THREE, group, molecule) {
   const style = state.style;
   const atomGeometry = new THREE.SphereGeometry(1, style === "space-fill" ? 96 : 40, style === "space-fill" ? 48 : 20);
-  molecule.atoms.forEach(([symbol, x, y, z]) => {
+  molecule.atoms.forEach(([symbol, x, y, z], atomIndex) => {
     const element = ELEMENTS[symbol] || ELEMENTS.C;
     const material = new THREE.MeshStandardMaterial({ color: element.color, ...moleculeMaterialPolish(state.polish, "atom") });
     const atom = new THREE.Mesh(atomGeometry, material);
-    atom.userData.materialKind = "atom";
+    Object.assign(atom.userData, { materialKind: "atom", atomIndex });
     atom.position.set(x, y, z);
     const atomScale = style === "space-fill" ? element.vdw * VDW_SCALE : style === "wire" ? element.radius * 0.18 : element.radius * 0.5;
     atom.scale.setScalar(Math.max(style === "ball-stick" ? 0.19 : 0.12, atomScale));
@@ -2018,19 +2351,48 @@ function addMoleculeToScene(THREE, group, molecule) {
       if (!start || !end) return;
       const bondInfo = bondHoverInfo(start, end, a, b);
       if (style === "ball-stick") {
-        createColoredBond(THREE, start, end, 0.032).forEach((bond) => {
-          Object.assign(bond.userData, bondInfo);
+        createColoredBond(THREE, start, end, 0.032).forEach((bond, partIndex) => {
+          Object.assign(bond.userData, bondInfo, {
+            bondStartIndex: a,
+            bondEndIndex: b,
+            bondPart: partIndex === 0 ? "start" : "end"
+          });
           group.add(bond);
         });
       } else {
         const bondMaterial = new THREE.MeshStandardMaterial({ color: 0xd9e3df, ...moleculeMaterialPolish(state.polish, "bond") });
         const bond = createBondCylinder(THREE, start, end, bondMaterial, 0.025);
-        Object.assign(bond.userData, { materialKind: "bond" }, bondInfo);
+        Object.assign(bond.userData, {
+          materialKind: "bond",
+          bondStartIndex: a,
+          bondEndIndex: b,
+          bondPart: "full"
+        }, bondInfo);
         group.add(bond);
       }
-      group.add(createBondHitbox(THREE, start, end, bondInfo));
+      const hitbox = createBondHitbox(THREE, start, end, bondInfo);
+      Object.assign(hitbox.userData, {
+        bondStartIndex: a,
+        bondEndIndex: b,
+        bondPart: "full"
+      });
+      group.add(hitbox);
     });
   }
+}
+
+function updateBondObject(THREE, object, start, end, part = "full") {
+  const startVector = new THREE.Vector3(start[1], start[2], start[3]);
+  const endVector = new THREE.Vector3(end[1], end[2], end[3]);
+  const molecularMidpoint = startVector.clone().add(endVector).multiplyScalar(0.5);
+  const segmentStart = part === "end" ? molecularMidpoint : startVector;
+  const segmentEnd = part === "start" ? molecularMidpoint : endVector;
+  const direction = segmentEnd.clone().sub(segmentStart);
+  const length = direction.length();
+  if (length < 1e-8) return;
+  object.position.copy(segmentStart).add(segmentEnd).multiplyScalar(0.5);
+  object.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  object.scale.y = length / Math.max(object.userData.baseLength || length, 1e-8);
 }
 
 function bondHoverInfo(start, end, startIndex, endIndex) {
@@ -2051,6 +2413,7 @@ function addAtomAnnotationsToScene(THREE, group, molecule, options) {
     else if (options.numbering) text = String(index + 1);
     if (!text) return;
     const sprite = createTextSprite(THREE, text);
+    sprite.userData.atomIndex = index;
     sprite.position.set(x, y, z);
     sprite.scale.setScalar(text.length > 2 ? 0.34 : 0.28);
     sprite.renderOrder = 50;
@@ -2138,6 +2501,7 @@ function createBondCylinder(THREE, start, end, material, radius = 0.055) {
   const direction = b.clone().sub(a);
   const geometry = new THREE.CylinderGeometry(radius, radius, direction.length(), 24, 1);
   const cylinder = new THREE.Mesh(geometry, material);
+  cylinder.userData.baseLength = direction.length();
   cylinder.position.copy(midpoint);
   cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
   return cylinder;
@@ -2179,6 +2543,7 @@ function createBondCylinderBetween(THREE, a, b, material, radius) {
   const direction = b.clone().sub(a);
   const geometry = new THREE.CylinderGeometry(radius, radius, direction.length(), 24, 1);
   const cylinder = new THREE.Mesh(geometry, material);
+  cylinder.userData.baseLength = direction.length();
   cylinder.position.copy(midpoint);
   cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
   return cylinder;
@@ -2186,17 +2551,20 @@ function createBondCylinderBetween(THREE, a, b, material, radius) {
 
 function clearGroup(group) {
   while (group.children.length) {
-    const child = group.children.pop();
-    child.geometry?.dispose();
-    if (Array.isArray(child.material)) {
-      child.material.forEach((material) => {
-        material.map?.dispose?.();
-        material.dispose?.();
-      });
-    } else {
-      child.material?.map?.dispose?.();
-      child.material?.dispose?.();
-    }
+    const child = group.children[group.children.length - 1];
+    group.remove(child);
+    child.traverse((object) => {
+      object.geometry?.dispose?.();
+      if (Array.isArray(object.material)) {
+        object.material.forEach((material) => {
+          material.map?.dispose?.();
+          material.dispose?.();
+        });
+      } else {
+        object.material?.map?.dispose?.();
+        object.material?.dispose?.();
+      }
+    });
   }
 }
 
@@ -2338,7 +2706,17 @@ function createLogSnapshot() {
     surfaceSize: state.surfaceSize,
     positiveOpacity: state.positiveOpacity,
     negativeOpacity: state.negativeOpacity,
-    orbitalSurfaceMode: state.orbitalSurfaceMode
+    orbitalSurfaceMode: state.orbitalSurfaceMode,
+    vibrations: state.vibrations,
+    vibrationUnits: state.vibrationUnits,
+    vibrationBaseMolecule: state.vibrationBaseMolecule ? cloneMolecule(state.vibrationBaseMolecule) : null,
+    selectedVibration: state.selectedVibration,
+    vibrationPlaying: state.vibrationPlaying,
+    vibrationAmplitude: state.vibrationAmplitude,
+    vibrationSpeed: state.vibrationSpeed,
+    vibrationPhase: state.vibrationPhase,
+    showModeVectors: state.showModeVectors,
+    hessianSummary: state.hessianSummary
   };
 }
 
@@ -2382,6 +2760,8 @@ function restoreLogEntry(id) {
 }
 
 async function restoreLogSnapshot(snapshot) {
+  pauseVibrationAnimation();
+  const resumeVibration = Boolean(snapshot.vibrationPlaying);
   Object.assign(state, {
     molecule: normalizeMolecule(cloneMolecule(snapshot.molecule)),
     trajectory: snapshot.trajectory,
@@ -2401,12 +2781,23 @@ async function restoreLogSnapshot(snapshot) {
     surfaceSize: snapshot.surfaceSize,
     positiveOpacity: snapshot.positiveOpacity,
     negativeOpacity: snapshot.negativeOpacity,
-    orbitalSurfaceMode: snapshot.orbitalSurfaceMode
+    orbitalSurfaceMode: snapshot.orbitalSurfaceMode,
+    vibrations: snapshot.vibrations || [],
+    vibrationUnits: snapshot.vibrationUnits || { frequency: "cm-1", ir: "km/mol", raman: "a.u." },
+    vibrationBaseMolecule: snapshot.vibrationBaseMolecule ? normalizeMolecule(cloneMolecule(snapshot.vibrationBaseMolecule)) : null,
+    selectedVibration: Number.isInteger(snapshot.selectedVibration) ? snapshot.selectedVibration : null,
+    vibrationPlaying: false,
+    vibrationAmplitude: snapshot.vibrationAmplitude ?? 0.35,
+    vibrationSpeed: snapshot.vibrationSpeed ?? 1,
+    vibrationPhase: snapshot.vibrationPhase ?? 0,
+    showModeVectors: snapshot.showModeVectors ?? true,
+    hessianSummary: snapshot.hessianSummary || null
   });
   updateSnapshotControls();
   updateMoleculeHud();
   updateTrajectoryUi();
   updateOrbitalUi();
+  updateVibrationUi();
   const selectedIndex = state.selectedOrbital ? state.orbitals.indexOf(state.selectedOrbital) : -1;
   orbitalSelect.value = selectedIndex >= 0 ? String(selectedIndex) : "";
   document.querySelector("#sourceName").textContent = snapshot.sourceName;
@@ -2418,6 +2809,9 @@ async function restoreLogSnapshot(snapshot) {
     state.volumeRenderer?.clearSurfaces();
     await renderStructureView({ preserveView: false });
   }
+  applyVibrationFrame();
+  syncNormalModeRenderer();
+  if (resumeVibration) startVibrationAnimation();
 }
 
 function updateMoleculeHud() {
@@ -2442,6 +2836,9 @@ function updateSnapshotControls() {
   surfaceSizeRange.value = String(Math.round(state.surfaceSize * 100));
   positiveOpacity.value = String(Math.round(state.positiveOpacity * 100));
   negativeOpacity.value = String(Math.round(state.negativeOpacity * 100));
+  vibrationAmplitude.value = String(Math.round(state.vibrationAmplitude * 100));
+  vibrationSpeed.value = String(Math.round(state.vibrationSpeed * 100));
+  document.querySelector("#modeVectorToggle").checked = state.showModeVectors;
 }
 
 function attachEvents() {
@@ -2502,6 +2899,7 @@ function attachEvents() {
           renderCubeVolume(state.volumeData).catch((error) => setStatus(error.message, true));
         } else {
           state.volumeRenderer.setMolecule(state.molecule, { preserveView: true, framePadding: 2.2 });
+          syncNormalModeRenderer();
         }
       }
     });
@@ -2586,6 +2984,39 @@ function attachEvents() {
     if (state.trajectory.length) {
       addLogEntry(`Optimization step ${state.frameIndex + 1} restored.`);
     }
+  });
+
+  vibrationPlay.addEventListener("click", () => {
+    if (state.vibrationPlaying) {
+      pauseVibrationAnimation();
+      addLogEntry("Normal-mode animation paused.");
+    } else {
+      startVibrationAnimation();
+      addLogEntry("Normal-mode animation started.");
+    }
+  });
+
+  document.querySelector("#vibrationStop").addEventListener("click", () => {
+    stopVibrationAnimation();
+    addLogEntry("Normal-mode animation stopped at equilibrium geometry.");
+  });
+
+  document.querySelector("#modeVectorToggle").addEventListener("change", (event) => {
+    state.showModeVectors = event.target.checked;
+    syncNormalModeRenderer();
+    addLogEntry(state.showModeVectors ? "Normal-mode vectors shown." : "Normal-mode vectors hidden.");
+  });
+
+  vibrationAmplitude.addEventListener("input", (event) => {
+    state.vibrationAmplitude = Number(event.target.value) / 100;
+    applyVibrationFrame();
+    syncNormalModeRenderer();
+    updateVibrationControls();
+  });
+
+  vibrationSpeed.addEventListener("input", (event) => {
+    state.vibrationSpeed = Number(event.target.value) / 100;
+    updateVibrationControls();
   });
 
   orbitalSelect.addEventListener("change", (event) => {
