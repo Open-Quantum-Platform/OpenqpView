@@ -44,7 +44,7 @@
               <input id="logFileInput" type="file" accept=".log,.out,.txt,.molden,.cube,.cub,.json,.xyz">
               <div class="data-input-header">
                 <label class="file-picker-button" for="logFileInput">Choose file</label>
-                <span>or drop/paste OpenQP log, XYZ, JSON, Molden, or cube data</span>
+                <span>or drop/paste OpenQP log, Hessian JSON, XYZ, Molden, or cube data</span>
               </div>
               <textarea id="pasteDataInput" class="paste-data-input" spellcheck="false" aria-label="Paste molecular data" placeholder="Paste molecular data here, then click Load pasted data or press Cmd/Ctrl+Enter."></textarea>
               <div class="paste-actions">
@@ -70,6 +70,44 @@
               <span id="energyLabel">Energy unavailable</span>
               <span id="convergenceLabel">Convergence unavailable</span>
             </div>
+          </section>
+
+          <section class="panel-section vibration-panel" id="vibrationPanel" hidden>
+            <h2>Frequencies &amp; Normal Modes</h2>
+            <div class="vibration-summary metadata-grid">
+              <span id="vibrationCount">0 modes</span>
+              <span id="imaginaryCount">0 imaginary</span>
+            </div>
+            <div class="frequency-table" role="grid" aria-label="Vibrational frequencies">
+              <div class="frequency-row frequency-header" role="row">
+                <span role="columnheader">Mode</span>
+                <span role="columnheader">cm⁻¹</span>
+                <span role="columnheader">IR</span>
+                <span role="columnheader">Raman</span>
+              </div>
+              <div id="frequencyRows" class="frequency-rows" role="rowgroup"></div>
+            </div>
+            <div class="vibration-actions">
+              <button id="vibrationPlay" type="button">Play</button>
+              <button id="vibrationStop" class="secondary-action" type="button">Stop</button>
+            </div>
+            <label class="control-row vibration-toggle">
+              <span>Mode vectors</span>
+              <input id="modeVectorToggle" type="checkbox" checked>
+            </label>
+            <label class="control-row">
+              <span>Amplitude <output id="amplitudeValue">0.35 Å</output></span>
+              <input id="vibrationAmplitude" type="range" min="5" max="90" value="35" aria-label="Normal mode amplitude">
+            </label>
+            <label class="control-row">
+              <span>Speed <output id="speedValue">1.00×</output></span>
+              <input id="vibrationSpeed" type="range" min="25" max="300" value="100" aria-label="Normal mode animation speed">
+            </label>
+            <div class="metadata-grid vibration-details">
+              <span id="frequencyLabel">Frequency unavailable</span>
+              <span id="intensityLabel">Intensity unavailable</span>
+            </div>
+            <p id="vibrationStatus">Load an OpenQP .hess.json file to inspect normal modes.</p>
           </section>
 
           <section class="panel-section library-panel" hidden>
@@ -158,6 +196,7 @@
       </main>
     </div>
 
+    <script src="hessian.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

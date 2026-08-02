@@ -16,7 +16,7 @@ def test_unified_input_panel_controls_exist():
     assert 'id="loadPastedData"' in html
     assert 'id="clearPastedData"' in html
     assert 'aria-label="Paste molecular data"' in html
-    assert "or drop/paste OpenQP log, XYZ, JSON, Molden, or cube data" in html
+    assert "or drop/paste OpenQP log, Hessian JSON, XYZ, Molden, or cube data" in html
 
 
 def test_paste_loader_reuses_file_parsing_order():
@@ -44,12 +44,36 @@ def test_auto_spin_controls_volume_renderer():
     assert "state.volumeRenderer?.setAutoSpin(state.spin);" in js
 
 
+def test_hessian_frequency_and_animation_controls_exist():
+    html = read("index.html")
+    js = read("app.js")
+    parser = read("hessian.js")
+    for marker in ["vibrationPanel", "frequencyRows", "vibrationPlay", "vibrationAmplitude", "vibrationSpeed", "modeVectorToggle"]:
+        assert f'id="{marker}"' in html
+    for marker in ["selectVibrationMode", "animateVibration", "applyVibrationFrame", "syncNormalModeRenderer"]:
+        assert f"function {marker}" in js
+    assert "frequency_modes" in parser
+    assert "normal_mode_eigenvectors" in parser
+    assert "infrared_intensities" in parser
+    assert "raman_activities" in parser
+
+
+def test_hessian_assets_are_loaded_before_the_app():
+    html = read("index.html")
+    pages_workflow = read(".github/workflows/pages.yml")
+    assert html.index('src="hessian.js"') < html.index('src="app.js"')
+    assert (ROOT / "samples" / "water-hessian.json").exists()
+    assert "cp index.html hessian.js app.js" in pages_workflow
+
+
 if __name__ == "__main__":
     for test in [
         test_unified_input_panel_controls_exist,
         test_paste_loader_reuses_file_parsing_order,
         test_paste_controls_have_styles,
         test_auto_spin_controls_volume_renderer,
+        test_hessian_frequency_and_animation_controls_exist,
+        test_hessian_assets_are_loaded_before_the_app,
     ]:
         test()
         print(f"PASS {test.__name__}")

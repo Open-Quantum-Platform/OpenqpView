@@ -1,13 +1,15 @@
-const CACHE_NAME = "openqpview-v61";
+const CACHE_NAME = "openqpview-v62";
 const ASSETS = [
   "./",
   "index.html",
   "styles.css",
+  "hessian.js",
   "app.js",
   "manifest.json",
   "icons/icon.svg",
   "samples/thymine-s0.molden",
-  "samples/thymine.xyz"
+  "samples/thymine.xyz",
+  "samples/water-hessian.json"
 ];
 
 self.addEventListener("install", (event) => {
