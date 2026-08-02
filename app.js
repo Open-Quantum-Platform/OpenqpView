@@ -3567,6 +3567,11 @@ function attachEvents() {
     addLogEntry("Normal-mode animation stopped at equilibrium geometry.");
   });
 
+  document.querySelector("#vibrationClear").addEventListener("click", () => {
+    clearVibrationData({ restoreGeometry: true });
+    addLogEntry("Vibrational frequencies and normal modes cleared; molecule and orbitals retained.");
+  });
+
   document.querySelector("#modeVectorToggle").addEventListener("change", (event) => {
     state.showModeVectors = event.target.checked;
     syncNormalModeRenderer();
