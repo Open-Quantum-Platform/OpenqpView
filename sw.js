@@ -1,10 +1,10 @@
-const CACHE_NAME = "openqpview-v65";
+const CACHE_NAME = "openqpview-v66";
 const ASSETS = [
   "./",
   "index.html",
-  "styles.css",
-  "hessian.js",
-  "app.js",
+  "styles.css?v=66",
+  "hessian.js?v=66",
+  "app.js?v=66",
   "manifest.json",
   "icons/icon.svg",
   "samples/thymine-s0.molden",

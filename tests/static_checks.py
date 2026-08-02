@@ -52,10 +52,11 @@ def test_hessian_frequency_and_animation_controls_exist():
     parser = read("hessian.js")
     for marker in ["vibrationPanel", "frequencyRows", "vibrationPlay", "vibrationStop", "vibrationClear", "vibrationAmplitude", "vibrationSpeed", "modeVectorToggle"]:
         assert f'id="{marker}"' in html
-    for marker in ["clearVibrationData", "selectVibrationMode", "animateVibration", "applyVibrationFrame", "syncNormalModeRenderer"]:
+    for marker in ["clearVibrationData", "clearVibrationView", "selectVibrationMode", "animateVibration", "applyVibrationFrame", "syncNormalModeRenderer"]:
         assert f"function {marker}" in js
     assert 'document.querySelector("#vibrationClear").addEventListener("click"' in js
-    assert "molecule and orbitals retained" in js
+    assert "Normal-mode view cleared at equilibrium geometry; frequencies retained." in js
+    assert "selectVibrationMode(index, { play: mode.vectors.length > 0 });" in js
     assert "frequency_modes" in parser
     assert "normal_mode_eigenvectors" in parser
     assert "infrared_intensities" in parser
@@ -192,8 +193,13 @@ def test_trajectory_keeps_modes_and_limits_mo_to_matching_frame():
 
 def test_hessian_assets_are_loaded_before_the_app():
     html = read("index.html")
+    service_worker = read("sw.js")
     pages_workflow = read(".github/workflows/pages.yml")
-    assert html.index('src="hessian.js"') < html.index('src="app.js"')
+    assert html.index('src="hessian.js?v=66"') < html.index('src="app.js?v=66"')
+    for asset in ["styles.css", "hessian.js", "app.js"]:
+        assert f'{asset}?v=66' in html
+        assert f'"{asset}?v=66"' in service_worker
+    assert 'openqpview-v66' in service_worker
     assert (ROOT / "samples" / "water-hessian.json").exists()
     assert "cp index.html hessian.js app.js" in pages_workflow
     assert "- `hessian.js`" in read("README.md")
