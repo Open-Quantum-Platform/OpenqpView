@@ -296,6 +296,33 @@ h2 {
   background: linear-gradient(135deg, rgba(134, 183, 255, 0.2), rgba(255, 122, 184, 0.14));
 }
 
+.example-load-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  width: 100%;
+}
+
+.example-load-grid .example-load-button:last-child {
+  grid-column: 1 / -1;
+}
+
+.example-download-link {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(134, 183, 255, 0.36);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: rgba(15, 23, 48, 0.72);
+  text-align: center;
+  text-decoration: none;
+}
+
+.example-download-link:hover {
+  border-color: rgba(255, 122, 184, 0.66);
+}
+
 .example-load-button:hover {
   border-color: rgba(255, 122, 184, 0.66);
 }

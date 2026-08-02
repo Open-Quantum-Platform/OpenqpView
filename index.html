@@ -46,7 +46,14 @@
                 <label class="file-picker-button" for="logFileInput">Choose file</label>
                 <span>or drop/paste OpenQP log, Hessian JSON, XYZ, Molden, or cube data</span>
               </div>
-              <button id="loadHessianLogSample" class="example-load-button" type="button">Open actual water Hessian + MO example</button>
+              <div class="example-load-grid" aria-label="Actual OpenQP examples">
+                <button id="loadHessianLogSample" class="example-load-button" type="button">Hessian + MO log</button>
+                <button id="loadHessianJsonSample" class="example-load-button" type="button">Hessian + MO JSON</button>
+                <button id="loadHessianMoldenSample" class="example-load-button" type="button">Hessian + MO Molden</button>
+                <button id="loadDysonJsonSample" class="example-load-button" type="button">MRSF-EKT Dyson JSON</button>
+                <button id="loadDysonMoldenSample" class="example-load-button" type="button">MRSF-EKT Dyson Molden</button>
+              </div>
+              <a class="example-download-link" href="samples/water-hessian-mo.log" download="water-hessian-mo.log">Download actual H₂O Hessian log</a>
               <textarea id="pasteDataInput" class="paste-data-input" spellcheck="false" aria-label="Paste molecular data" placeholder="Paste molecular data here, then click Load pasted data or press Cmd/Ctrl+Enter."></textarea>
               <div class="paste-actions">
                 <button id="loadPastedData" type="button">Load pasted data</button>

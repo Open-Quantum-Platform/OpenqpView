@@ -66,6 +66,7 @@ def test_hessian_frequency_and_animation_controls_exist():
 
 
 def test_actual_hessian_log_and_matching_molden_sample_exist():
+    html = read("index.html")
     js = read("app.js")
     for sample in [
         "water-hessian-mo.inp",
@@ -73,9 +74,14 @@ def test_actual_hessian_log_and_matching_molden_sample_exist():
         "water-hessian-mo.hess.json",
         "water-hessian-mo.freq.molden",
         "water-hessian-mo.molden",
+        "water-ekt-dyson.json",
+        "water-ekt-dyson.molden",
     ]:
         assert (ROOT / "samples" / sample).exists()
-    assert 'fetch("samples/water-hessian-mo.log"' in js
+    assert 'loadHessianLogSample: "samples/water-hessian-mo.log"' in js
+    assert 'loadDysonJsonSample: "samples/water-ekt-dyson.json"' in js
+    assert 'href="samples/water-hessian-mo.log"' in html
+    assert 'download="water-hessian-mo.log"' in html
     assert "function parseOpenQpLogBasis" in js
     assert 'orbitalRenderSource = hasLogOrbitalGridData' in js
     assert '"log-basis"' in js

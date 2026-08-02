@@ -869,9 +869,7 @@ function updateOrbitalUi() {
   state.orbitals.forEach((orbital, index) => {
     const option = document.createElement("option");
     option.value = String(index);
-    const spin = orbital.spin ? `${orbital.spin} ` : "";
-    const occupancy = orbital.occupancy === null || orbital.occupancy === undefined ? "" : ` occ ${orbital.occupancy.toFixed(1)}`;
-    option.textContent = `${spin}MO ${orbital.index}: ${orbital.energy.toFixed(6)} Eh${occupancy}`;
+    option.textContent = orbitalDisplayName(orbital);
     orbitalSelect.appendChild(option);
   });
 
@@ -879,6 +877,29 @@ function updateOrbitalUi() {
   document.querySelector("#orbitalStatus").textContent = state.orbitals.length
     ? orbitalStatusText()
     : "Load a cube volumetric grid for true MO isosurfaces, or load Molden/log files for structure and MO metadata.";
+}
+
+function orbitalDisplayName(orbital) {
+  if (orbital.kind === "dyson") {
+    const binding = Number.isFinite(orbital.bindingEnergyEv)
+      ? ` · eBE ${orbital.bindingEnergyEv.toFixed(4)} eV`
+      : "";
+    const strength = Number.isFinite(orbital.poleStrength)
+      ? ` · pole ${orbital.poleStrength.toFixed(4)}`
+      : "";
+    return `${orbital.label || `Dyson state ${orbital.stateIndex || orbital.index}`}${binding}${strength}`;
+  }
+  const spin = orbital.spin ? `${orbital.spin} ` : "";
+  const occupancy = orbital.occupancy === null || orbital.occupancy === undefined
+    ? ""
+    : ` occ ${orbital.occupancy.toFixed(1)}`;
+  return `${spin}MO ${orbital.index}: ${orbital.energy.toFixed(6)} Eh${occupancy}`;
+}
+
+function orbitalShortName(orbital) {
+  return orbital?.kind === "dyson"
+    ? orbital.label || `Dyson state ${orbital.stateIndex || orbital.index}`
+    : `${orbital?.spin || ""} MO ${orbital?.index}`.trim();
 }
 
 function isOrbitalFrameActive() {
@@ -899,6 +920,9 @@ function orbitalStatusText() {
   }
   if (state.orbitalRenderSource === "log-basis") {
     return "OpenQP log basis and MO coefficients loaded. Select an MO to generate its surface directly from this log.";
+  }
+  if (state.orbitalRenderSource === "json-basis") {
+    return "OpenQP JSON basis, SCF MOs, and state-specific Dyson orbitals loaded. Select an orbital to generate its surface.";
   }
   if (state.orbitalRenderSource === "metadata") {
     return "This file contains MO metadata but no volumetric grid. Export/upload a .cube/.cub orbital grid to render the true surface.";
@@ -1112,13 +1136,14 @@ function parseMolden(text, fileName = "Molden file") {
   }
   const basis = parseMoldenBasis(lines, atomsInfo.atoms.length);
   const orbitals = parseMoldenOrbitals(lines, atomsInfo.atoms.length, basis.aoToAtom);
+  const vibrationData = parseMoldenVibrations(lines, atomsInfo.atoms.length);
   const molecule = {
     name: fileName.replace(/\.(molden|mol)$/i, ""),
     formula: formulaFromAtoms(atomsInfo.atoms),
     atoms: atomsInfo.atoms,
     bonds: inferBonds(atomsInfo.atoms)
   };
-  return { molecule, orbitals, basis, atomUnit: atomsInfo.unit };
+  return { molecule, orbitals, basis, vibrationData, atomUnit: atomsInfo.unit };
 }
 
 function parseMoldenAtoms(lines) {
@@ -1148,6 +1173,13 @@ function parseMoldenBasis(lines, atomCount) {
   const aoToAtom = [];
   const basisFunctions = [];
   const unsupportedShells = new Set();
+  const sphericalShells = new Set();
+  lines.forEach((line) => {
+    const marker = line.trim();
+    if (/^\[[^\]]*5D/i.test(marker)) sphericalShells.add("d");
+    if (/^\[[^\]]*7F/i.test(marker)) sphericalShells.add("f");
+    if (/^\[[^\]]*9G/i.test(marker)) sphericalShells.add("g");
+  });
   let currentAtom = null;
 
   for (let i = start + 1; i < lines.length; i += 1) {
@@ -1155,7 +1187,7 @@ function parseMoldenBasis(lines, atomCount) {
     if (/^\[/.test(line)) break;
     if (!line) continue;
 
-    const atomLine = line.match(/^(\d+)\s*$/);
+    const atomLine = line.match(/^(\d+)(?:\s+0)?\s*$/);
     if (atomLine) {
       currentAtom = Number(atomLine[1]) - 1;
       continue;
@@ -1172,11 +1204,16 @@ function parseMoldenBasis(lines, atomCount) {
           primitives.push({ exponent: primitive[0], coefficient: primitive[1] });
         }
       }
-      const components = cartesianShellPowers(shell);
+      const components = sphericalShells.has(shell) ? [] : moldenCartesianShellPowers(shell);
       if (!components.length) unsupportedShells.add(shell.toUpperCase());
       components.forEach((powers) => {
         aoToAtom.push(currentAtom);
-        basisFunctions.push({ atomIndex: currentAtom, powers, primitives });
+        basisFunctions.push({
+          atomIndex: currentAtom,
+          powers,
+          primitives,
+          normalizationScale: cartesianComponentNormalizationScale(powers)
+        });
       });
       i += primitiveCount;
     }
@@ -1191,7 +1228,19 @@ function cartesianShellPowers(shell) {
     s: [[0, 0, 0]],
     p: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
     d: [[2, 0, 0], [0, 2, 0], [0, 0, 2], [1, 1, 0], [1, 0, 1], [0, 1, 1]],
-    f: [[3, 0, 0], [0, 3, 0], [0, 0, 3], [2, 1, 0], [2, 0, 1], [1, 2, 0], [0, 2, 1], [1, 0, 2], [0, 1, 2], [1, 1, 1]]
+    f: [[3, 0, 0], [0, 3, 0], [0, 0, 3], [2, 1, 0], [2, 0, 1], [1, 2, 0], [0, 2, 1], [1, 0, 2], [0, 1, 2], [1, 1, 1]],
+    g: [[4, 0, 0], [0, 4, 0], [0, 0, 4], [3, 1, 0], [3, 0, 1], [1, 3, 0], [0, 3, 1], [1, 0, 3], [0, 1, 3], [2, 2, 0], [2, 0, 2], [0, 2, 2], [2, 1, 1], [1, 2, 1], [1, 1, 2]]
+  };
+  return powers[shell] || [];
+}
+
+function moldenCartesianShellPowers(shell) {
+  const powers = {
+    s: [[0, 0, 0]],
+    p: [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+    d: [[2, 0, 0], [0, 2, 0], [0, 0, 2], [1, 1, 0], [1, 0, 1], [0, 1, 1]],
+    f: [[3, 0, 0], [0, 3, 0], [0, 0, 3], [1, 2, 0], [2, 1, 0], [2, 0, 1], [1, 0, 2], [0, 1, 2], [0, 2, 1], [1, 1, 1]],
+    g: [[4, 0, 0], [0, 4, 0], [0, 0, 4], [3, 1, 0], [3, 0, 1], [1, 3, 0], [0, 3, 1], [1, 0, 3], [0, 1, 3], [2, 2, 0], [2, 0, 2], [0, 2, 2], [2, 1, 1], [1, 2, 1], [1, 1, 2]]
   };
   return powers[shell] || [];
 }
@@ -1218,6 +1267,7 @@ function parseMoldenOrbitals(lines, atomCount, aoToAtom) {
   if (start < 0) return [];
   const orbitals = [];
   let current = null;
+  let pendingSymmetry = null;
 
   function finishOrbital() {
     if (!current) return;
@@ -1234,9 +1284,18 @@ function parseMoldenOrbitals(lines, atomCount, aoToAtom) {
     if (/^\[/.test(line)) break;
     if (!line) continue;
 
+    const symmetry = line.match(/^Sym=\s*(\S+)/i);
+    if (symmetry) {
+      finishOrbital();
+      current = null;
+      pendingSymmetry = symmetry[1];
+      continue;
+    }
+
     const energy = line.match(/^Ene=\s*([-+0-9.Ee]+)/i);
     if (energy) {
       finishOrbital();
+      const dyson = pendingSymmetry?.match(/^Dyson-(IP|EA)-state-(\d+)$/i);
       current = {
         index: orbitals.length + 1,
         energy: Number(energy[1]),
@@ -1245,8 +1304,14 @@ function parseMoldenOrbitals(lines, atomCount, aoToAtom) {
         source: "Molden",
         atomWeights: Array(atomCount).fill(0),
         atomSigned: Array(atomCount).fill(0),
-        coefficients: new Float32Array(aoToAtom.length)
+        coefficients: new Float32Array(aoToAtom.length),
+        symmetry: pendingSymmetry,
+        kind: dyson ? "dyson" : "mo",
+        dysonKind: dyson?.[1]?.toUpperCase() || null,
+        stateIndex: dyson ? Number(dyson[2]) : null,
+        label: dyson ? `Dyson ${dyson[1].toUpperCase()} state ${Number(dyson[2])}` : null
       };
+      pendingSymmetry = null;
       continue;
     }
 
@@ -1259,6 +1324,10 @@ function parseMoldenOrbitals(lines, atomCount, aoToAtom) {
     const occupancy = line.match(/^Occup=\s*([-+0-9.Ee]+)/i);
     if (occupancy) {
       current.occupancy = Number(occupancy[1]);
+      if (current.kind === "dyson") {
+        current.poleStrength = current.occupancy;
+        current.bindingEnergyEv = -current.energy * 27.211386245988;
+      }
       continue;
     }
 
@@ -1276,6 +1345,57 @@ function parseMoldenOrbitals(lines, atomCount, aoToAtom) {
   }
   finishOrbital();
   return orbitals;
+}
+
+function parseMoldenVibrations(lines, atomCount) {
+  const frequencies = moldenNumericSection(lines, /^\[FREQ\]$/i);
+  if (!frequencies.length) {
+    return OpenQPHessian.extractVibrations({}, atomCount);
+  }
+  const infrared = moldenNumericSection(lines, /^\[INT\]$/i);
+  const raman = moldenNumericSection(lines, /^\[(RAMAN|RAMAN-ACTIVITY)\]$/i);
+  const modes = [];
+  const start = lines.findIndex((line) => /^\[FR-NORM-COORD\]$/i.test(line.trim()));
+  if (start >= 0) {
+    let current = null;
+    for (let index = start + 1; index < lines.length; index += 1) {
+      const line = lines[index].trim();
+      if (/^\[/.test(line)) break;
+      const vibration = line.match(/^vibration\s+(\d+)/i);
+      if (vibration) {
+        current = [];
+        modes[Number(vibration[1]) - 1] = current;
+        continue;
+      }
+      if (!current || !line) continue;
+      const vector = line.split(/\s+/).map(OpenQPHessian.numericValue);
+      if (vector.length >= 3 && vector.slice(0, 3).every(Number.isFinite) && current.length < atomCount) {
+        current.push(vector.slice(0, 3));
+      }
+    }
+  }
+  return OpenQPHessian.extractVibrations({
+    freqs: frequencies,
+    modes,
+    infrared_intensities: infrared,
+    raman_activities: raman
+  }, atomCount);
+}
+
+function moldenNumericSection(lines, headerPattern) {
+  const start = lines.findIndex((line) => headerPattern.test(line.trim()));
+  if (start < 0) return [];
+  const values = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (/^\[/.test(line)) break;
+    if (!line) continue;
+    line.split(/\s+/).forEach((token) => {
+      const value = OpenQPHessian.numericValue(token);
+      if (Number.isFinite(value)) values.push(value);
+    });
+  }
+  return values;
 }
 
 async function loadOpenQpLogText(text, fileName) {
@@ -1391,7 +1511,14 @@ async function loadMoldenText(text, fileName, options = {}) {
     keepView: options.preserveView,
     keepVibrations: options.keepVibrations
   });
-  if (options.keepVibrations && state.vibrations.length) {
+  if (!options.keepVibrations) {
+    state.vibrations = parsed.vibrationData.modes;
+    state.vibrationUnits = parsed.vibrationData.units;
+    state.vibrationBaseMolecule = state.vibrations.length ? cloneMolecule(state.molecule) : null;
+    state.selectedVibration = state.vibrations.length ? 0 : null;
+    state.hessianSummary = null;
+  }
+  if (state.vibrations.length) {
     state.vibrationBaseMolecule = cloneMolecule(state.molecule);
     applyVibrationFrame();
     syncNormalModeRenderer();
@@ -1405,8 +1532,11 @@ async function loadMoldenText(text, fileName, options = {}) {
     const basisSummary = parsed.basis.unsupportedShells?.length
       ? `, unsupported ${parsed.basis.unsupportedShells.join("/")} shell; MO metadata only`
       : "";
-    document.querySelector("#sourceMeta").textContent = `Molden ${parsed.atomUnit}, ${parsed.orbitals.length} orbitals${basisSummary}`;
-    setStatus(`Loaded Molden geometry and ${parsed.orbitals.length} orbitals from ${fileName}.`);
+    document.querySelector("#sourceMeta").textContent = `Molden ${parsed.atomUnit}, ${parsed.orbitals.length} orbitals, ${parsed.vibrationData.modes.length} modes${basisSummary}`;
+    if (parsed.vibrationData.modes.length) {
+      selectVibrationMode(0, { play: parsed.vibrationData.modes[0].vectors.length > 0 });
+    }
+    setStatus(`Loaded Molden geometry, ${parsed.orbitals.length} orbitals, and ${parsed.vibrationData.modes.length} vibrational modes from ${fileName}.`);
   }
 }
 
@@ -1414,7 +1544,8 @@ async function loadMoleculeJsonText(text, fileName) {
   const parsed = JSON.parse(text);
   const molecule = await moleculeFromJson(parsed, fileName);
   const source = jsonMoleculeSource(parsed);
-  const orbitals = parseOpenQpJsonOrbitals(source, molecule.atoms.length);
+  const basis = parseOpenQpJsonBasis(source, molecule.atoms.length);
+  const orbitals = parseOpenQpJsonOrbitals(source, molecule.atoms.length, basis.aoToAtom);
   let vibrationData = OpenQPHessian.extractVibrations(parsed, molecule.atoms.length);
   if (!vibrationData.modes.length && source !== parsed) {
     vibrationData = OpenQPHessian.extractVibrations(source, molecule.atoms.length);
@@ -1426,7 +1557,13 @@ async function loadMoleculeJsonText(text, fileName) {
   state.frameIndex = 0;
   state.orbitals = orbitals;
   state.selectedOrbital = null;
-  state.orbitalRenderSource = orbitals.length ? "metadata" : "none";
+  state.moldenBasis = basis;
+  const hasJsonOrbitalGridData = basis.supported !== false
+    && basis.basisFunctions.length > 0
+    && orbitals.some((orbital) => orbital.coefficients?.length === basis.basisFunctions.length);
+  state.orbitalRenderSource = hasJsonOrbitalGridData
+    ? "json-basis"
+    : orbitals.length ? "metadata" : "none";
   state.vibrations = vibrationData.modes;
   state.vibrationUnits = vibrationData.units;
   state.vibrationBaseMolecule = vibrationData.modes.length ? cloneMolecule(state.molecule) : null;
@@ -1440,12 +1577,12 @@ async function loadMoleculeJsonText(text, fileName) {
   document.querySelector("#sourceMeta").textContent = vibrationData.modes.length || hessianSummary
     ? `OpenQP Hessian JSON: ${vibrationData.modes.length} modes${hessianSummary ? `, ${hessianSummary.dimension} × ${hessianSummary.dimension} Hessian` : ""}`
     : isOpenQpJson(parsed)
-      ? `OpenQP JSON geometry, ${orbitals.length} orbitals`
+      ? `OpenQP JSON geometry, ${orbitals.length} orbitals, ${basis.basisFunctions.length} AOs`
       : "Molecule JSON";
   if (vibrationData.modes.length) {
     selectVibrationMode(0, { play: vibrationData.modes[0].vectors.length > 0 });
   }
-  setStatus(`Loaded molecule JSON from ${fileName}${orbitals.length ? ` with ${orbitals.length} orbitals` : ""}${vibrationData.modes.length ? ` and ${vibrationData.modes.length} vibrational modes` : ""}.`);
+  setStatus(`Loaded molecule JSON from ${fileName}${orbitals.length ? ` with ${orbitals.length} orbitals` : ""}${vibrationData.modes.length ? ` and ${vibrationData.modes.length} vibrational modes` : ""}${hasJsonOrbitalGridData ? " and direct orbital surface data" : ""}.`);
 }
 
 async function moleculeFromJson(input, fileName = "molecule.json") {
@@ -1508,11 +1645,154 @@ function moleculeFromOpenQpJson(source, fileName) {
   };
 }
 
-function parseOpenQpJsonOrbitals(source, atomCount) {
+function parseOpenQpJsonBasis(source, atomCount) {
+  const portable = source?.basis_set;
+  if (!portable || !Array.isArray(portable.shells)) {
+    return { aoToAtom: [], basisFunctions: [], supported: false, unsupportedShells: [] };
+  }
+  if (portable.spherical_harmonics) {
+    return { aoToAtom: [], basisFunctions: [], supported: false, unsupportedShells: ["spherical D/F/G"] };
+  }
+  const aoToAtom = [];
+  const basisFunctions = [];
+  const unsupportedShells = new Set();
+  portable.shells.forEach((rawShell) => {
+    const atomIndex = Number(rawShell.atom_index ?? rawShell.atomIndex);
+    const shell = String(rawShell.shell || "spdfg"[Number(rawShell.angular_momentum)] || "").toLowerCase();
+    if (!Number.isInteger(atomIndex) || atomIndex < 0 || atomIndex >= atomCount) return;
+    const exponents = rawShell.exponents || [];
+    const coefficients = rawShell.coefficients || [];
+    const primitives = exponents.map((exponent, index) => ({
+      exponent: Number(exponent),
+      coefficient: Number(coefficients[index])
+    })).filter((primitive) => Number.isFinite(primitive.exponent) && Number.isFinite(primitive.coefficient));
+    const components = moldenCartesianShellPowers(shell);
+    if (!components.length || !primitives.length) {
+      unsupportedShells.add(shell.toUpperCase() || "unknown");
+      return;
+    }
+    components.forEach((powers) => {
+      aoToAtom.push(atomIndex);
+      basisFunctions.push({
+        atomIndex,
+        powers,
+        primitives,
+        normalizationScale: cartesianComponentNormalizationScale(powers)
+      });
+    });
+  });
+  const expectedNbf = Number(portable.nbf);
+  if (Number.isFinite(expectedNbf) && expectedNbf !== basisFunctions.length) {
+    unsupportedShells.add("basis-size mismatch");
+  }
+  return unsupportedShells.size
+    ? { aoToAtom: [], basisFunctions: [], supported: false, unsupportedShells: Array.from(unsupportedShells) }
+    : { aoToAtom, basisFunctions, supported: true, unsupportedShells: [] };
+}
+
+function parseOpenQpJsonOrbitals(source, atomCount, aoToAtom = []) {
   if (!source || typeof source !== "object") return [];
-  const alpha = parseOpenQpJsonSpinOrbitals(source["OQP::E_MO_A"] || source.E_MO_A, source["OQP::VEC_MO_A"] || source.VEC_MO_A, "Alpha", atomCount);
-  const beta = parseOpenQpJsonSpinOrbitals(source["OQP::E_MO_B"] || source.E_MO_B, source["OQP::VEC_MO_B"] || source.VEC_MO_B, "Beta", atomCount);
-  return [...alpha, ...beta];
+  const portable = source.molecular_orbitals;
+  let orbitals = [];
+  if (portable && typeof portable === "object") {
+    orbitals = [
+      ...parsePortableJsonSpinOrbitals(portable.alpha, "Alpha", atomCount, aoToAtom),
+      ...parsePortableJsonSpinOrbitals(portable.beta, "Beta", atomCount, aoToAtom)
+    ];
+  } else {
+    const alpha = parseOpenQpJsonSpinOrbitals(source["OQP::E_MO_A"] || source.E_MO_A, source["OQP::VEC_MO_A"] || source.VEC_MO_A, "Alpha", atomCount);
+    const beta = parseOpenQpJsonSpinOrbitals(source["OQP::E_MO_B"] || source.E_MO_B, source["OQP::VEC_MO_B"] || source.VEC_MO_B, "Beta", atomCount);
+    orbitals = [...alpha, ...beta];
+  }
+  return [...orbitals, ...parseOpenQpJsonDysonOrbitals(source.dyson_orbitals, atomCount, aoToAtom)];
+}
+
+function parsePortableJsonSpinOrbitals(spinData, spin, atomCount, aoToAtom) {
+  if (!spinData || typeof spinData !== "object") return [];
+  const energies = spinData.energies_hartree || spinData.energies;
+  const vectors = spinData.coefficients;
+  const occupancies = spinData.occupancies || [];
+  if (!Array.isArray(energies) || !Array.isArray(vectors)) return [];
+  return energies.map((energy, index) => {
+    const vector = vectors[index];
+    if (!Number.isFinite(Number(energy)) || !Array.isArray(vector) || !vector.length) return null;
+    return buildJsonOrbital({
+      index: index + 1,
+      energy: Number(energy),
+      spin,
+      occupancy: Number.isFinite(Number(occupancies[index])) ? Number(occupancies[index]) : null,
+      coefficients: vector,
+      atomCount,
+      aoToAtom
+    });
+  }).filter(Boolean);
+}
+
+function parseOpenQpJsonDysonOrbitals(dysonData, atomCount, aoToAtom) {
+  if (!dysonData || !Array.isArray(dysonData.states)) return [];
+  return dysonData.states.map((stateData, index) => {
+    if (!Array.isArray(stateData.coefficients) || !stateData.coefficients.length) return null;
+    const kind = String(stateData.kind || "").toUpperCase();
+    const stateIndex = Number(stateData.state_index ?? index + 1);
+    const orbital = buildJsonOrbital({
+      index: stateIndex,
+      energy: Number(stateData.eigenvalue_hartree),
+      spin: "",
+      occupancy: null,
+      coefficients: stateData.coefficients,
+      atomCount,
+      aoToAtom
+    });
+    return orbital ? {
+      ...orbital,
+      kind: "dyson",
+      dysonKind: kind,
+      stateIndex,
+      label: stateData.label || `Dyson ${kind} state ${stateIndex}`,
+      parentState: stateData.parent_state,
+      bindingEnergyEv: Number(stateData.electron_binding_energy_ev),
+      poleStrength: Number(stateData.pole_strength),
+      source: "OpenQP JSON Dyson"
+    } : null;
+  }).filter(Boolean);
+}
+
+function buildJsonOrbital({ index, energy, spin, occupancy, coefficients, atomCount, aoToAtom }) {
+  if (!Number.isFinite(energy)) return null;
+  const typedCoefficients = Float32Array.from(coefficients.map((value) => Number(value) || 0));
+  const atomData = orbitalAtomData(typedCoefficients, atomCount, aoToAtom);
+  return {
+    index,
+    energy,
+    spin,
+    occupancy,
+    kind: "mo",
+    source: "OpenQP JSON",
+    atomWeights: atomData.weights,
+    atomPhases: atomData.phases,
+    coefficients: typedCoefficients
+  };
+}
+
+function orbitalAtomData(coefficients, atomCount, aoToAtom) {
+  if (!atomCount || !coefficients.length || aoToAtom.length !== coefficients.length) {
+    return {
+      weights: approximateAtomWeightsFromCoefficients(coefficients, atomCount),
+      phases: approximateAtomPhasesFromCoefficients(coefficients, atomCount)
+    };
+  }
+  const weights = Array(atomCount).fill(0);
+  const signed = Array(atomCount).fill(0);
+  coefficients.forEach((value, index) => {
+    const atomIndex = aoToAtom[index];
+    weights[atomIndex] += value * value;
+    signed[atomIndex] += value;
+  });
+  const max = Math.max(...weights, 0);
+  return {
+    weights: max > 0 ? weights.map((value) => value / max) : weights,
+    phases: signed.map((value) => (value < 0 ? -1 : 1))
+  };
 }
 
 function parseOpenQpJsonSpinOrbitals(energies, vectors, spin, atomCount) {
@@ -1567,7 +1847,12 @@ function jsonMoleculeSource(input) {
 }
 
 function isOpenQpJson(source) {
-  return Boolean(source && Object.keys(source).some((key) => key.startsWith("OQP::")));
+  return Boolean(source && (
+    Object.keys(source).some((key) => key.startsWith("OQP::"))
+    || source.basis_set?.format?.startsWith("OpenQP")
+    || source.frequency_modes?.format?.startsWith("OpenQP")
+    || source.dyson_orbitals?.format?.startsWith("OpenQP")
+  ));
 }
 
 function matchingXyzUrl(fileName) {
@@ -2034,7 +2319,7 @@ async function renderBasisOrbital(orbital) {
     setOrbitalStatus("This orbital has metadata only. Upload a cube grid or a Molden file with [GTO] and [MO] sections.", { log: true });
     return;
   }
-  setOrbitalStatus(`Evaluating ${orbital.spin || ""} MO ${orbital.index} on a 3D grid...`);
+  setOrbitalStatus(`Evaluating ${orbitalShortName(orbital)} on a 3D grid...`);
   await new Promise((resolve) => requestAnimationFrame(resolve));
   if (requestId !== orbitalRenderRequest || state.selectedOrbital !== orbital || !isOrbitalFrameActive()) {
     return;
@@ -2056,8 +2341,10 @@ async function renderBasisOrbital(orbital) {
   document.querySelector("#sourceMeta").textContent = `${cube.axes.map((axis) => axis.count).join(" x ")} generated MO grid`;
   const sourceLabel = orbital.source === "OpenQP log"
     ? "OpenQP log basis and MO coefficients"
-    : "Molden coefficients";
-  setOrbitalStatus(`${orbital.spin || ""} MO ${orbital.index} rendered directly from ${sourceLabel} with marching cubes.`, { log: true });
+    : orbital.source?.startsWith("OpenQP JSON")
+      ? "OpenQP JSON basis and AO coefficients"
+      : "Molden coefficients";
+  setOrbitalStatus(`${orbitalShortName(orbital)} rendered directly from ${sourceLabel} with marching cubes.`, { log: true });
 }
 
 function buildBasisOrbitalVolume(molecule, basisFunctions, orbital) {
@@ -2104,8 +2391,8 @@ function buildBasisOrbitalVolume(molecule, basisFunctions, orbital) {
   }
 
   return {
-    name: `${molecule.name}-MO-${orbital.index}`,
-    title: `${orbital.spin || ""} MO ${orbital.index}`,
+    name: `${molecule.name}-${orbital.kind === "dyson" ? "Dyson" : "MO"}-${orbital.index}`,
+    title: orbitalShortName(orbital),
     origin: min,
     axes: [
       { count: resolution, vector: { x: step.x, y: 0, z: 0 } },
@@ -3294,15 +3581,15 @@ function attachEvents() {
       return;
     }
     if (state.orbitalRenderSource === "cube") {
-      setOrbitalStatus(`${state.selectedOrbital.spin || ""} MO ${state.selectedOrbital.index} selected. Rendering cube-grid positive/negative isosurfaces.`, { log: true });
-    } else if (state.orbitalRenderSource === "molden" || state.orbitalRenderSource === "log-basis") {
+      setOrbitalStatus(`${orbitalShortName(state.selectedOrbital)} selected. Rendering cube-grid positive/negative isosurfaces.`, { log: true });
+    } else if (["molden", "log-basis", "json-basis"].includes(state.orbitalRenderSource)) {
       renderBasisOrbital(state.selectedOrbital).catch((error) => {
         console.error(error);
         setOrbitalStatus(error.message, { log: true, isError: true });
         setStatus(error.message, true);
       });
     } else {
-      setOrbitalStatus(`${state.selectedOrbital.spin || ""} MO ${state.selectedOrbital.index} selected from log metadata. Loading matching Molden data...`, { log: true });
+      setOrbitalStatus(`${orbitalShortName(state.selectedOrbital)} selected from metadata. Loading matching Molden data...`, { log: true });
       autoLoadMatchingMoldenForMetadata(index).catch((error) => {
         console.error(error);
         setOrbitalStatus(error.message, { log: true, isError: true });
@@ -3325,15 +3612,24 @@ function attachEvents() {
   const logFileInput = document.querySelector("#logFileInput");
   const fileDrop = document.querySelector("#fileDrop");
   const pasteDataInput = document.querySelector("#pasteDataInput");
-  document.querySelector("#loadHessianLogSample").addEventListener("click", async () => {
-    try {
-      setStatus("Loading the actual OpenQP water Hessian example...");
-      const response = await fetch("samples/water-hessian-mo.log", { cache: "no-store" });
-      if (!response.ok) throw new Error(`Could not load the example: HTTP ${response.status}`);
-      await loadTextByFormat(await response.text(), "water-hessian-mo.log");
-    } catch (error) {
-      setStatus(error.message, true);
-    }
+  const bundledExamples = {
+    loadHessianLogSample: "samples/water-hessian-mo.log",
+    loadHessianJsonSample: "samples/water-hessian-mo.hess.json",
+    loadHessianMoldenSample: "samples/water-hessian-mo.freq.molden",
+    loadDysonJsonSample: "samples/water-ekt-dyson.json",
+    loadDysonMoldenSample: "samples/water-ekt-dyson.molden"
+  };
+  Object.entries(bundledExamples).forEach(([buttonId, sampleUrl]) => {
+    document.querySelector(`#${buttonId}`).addEventListener("click", async () => {
+      try {
+        setStatus(`Loading actual OpenQP example ${sampleUrl.split("/").at(-1)}...`);
+        const response = await fetch(sampleUrl, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Could not load the example: HTTP ${response.status}`);
+        await loadTextByFormat(await response.text(), sampleUrl.split("/").at(-1));
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
   });
   logFileInput.addEventListener("change", () => {
     if (logFileInput.files?.[0]) {

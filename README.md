@@ -35,7 +35,7 @@ If you have Node/npm available, `npm run start` runs the same command. Because t
 
 1. Start the local web server.
 2. Open `http://localhost:4173` in a browser.
-3. Use **Input Data** to choose or drag and drop a molecular data file, including an OpenQP Hessian `.log` or `.hess.json` result. The bundled actual water calculation can be opened with one click.
+3. Use **Input Data** to choose or drag and drop a molecular data file. The bundled buttons open actual Hessian/MO and MRSF-EKT Dyson calculations as log, JSON, or Molden data.
 4. Rotate with mouse drag or touch drag.
 5. Zoom with the mouse wheel or trackpad scroll.
 6. Use **Style** to switch between Ball & Stick, VDW, and Wire.
@@ -46,14 +46,14 @@ If you have Node/npm available, `npm run start` runs the same command. Because t
 
 ## Supported Files
 
-Use the `Input Data` chooser in the right panel, or drop a `.log`, `.json`, `.molden`, `.cube`, `.cub`, or `.xyz` file onto it. OpenQP `.hess.json` sidecars provide geometry, frequencies, normal-mode displacement vectors, IR intensities, and Raman activities. For current OpenQP logs, the browser parses repeated `Cartesian Coordinate in Angstrom` blocks as an optimization trajectory, reads basis details and AO-resolved MO coefficients for direct MO surfaces, and recognizes the frequency/intensity table plus `Normal mode eigenvectors` blocks when present. For other OpenQP JSON files, it reads `atoms`/`coord` geometry and `OQP::E_MO_A/B` plus `OQP::VEC_MO_A/B` orbital data. For Molden files, it reads `[Atoms]`, `[GTO]`, and `[MO]` sections, evaluates selected orbitals onto a 3D scalar grid, and renders positive/negative marching-cubes isosurfaces. For cube files, it parses the volumetric scalar grid directly and renders true positive and negative isosurfaces with WebGL marching cubes.
+Use the `Input Data` chooser in the right panel, or drop a `.log`, `.json`, `.molden`, `.cube`, `.cub`, or `.xyz` file onto it. Current OpenQP JSON files contain a portable basis plus AO-ordered SCF and MRSF-EKT Dyson orbitals, while Hessian JSON also carries frequencies, displacement vectors, IR/Raman data, and Hessian metadata. Current OpenQP Molden output combines `[Atoms]`, `[GTO]`, `[MO]`, `[FREQ]`, `[INT]`, `[FR-COORD]`, and `[FR-NORM-COORD]` in one file. OpenqpView therefore keeps MO/Dyson surfaces and normal-mode controls available from the same JSON or Molden result.
 
 | File type | Purpose |
 | --- | --- |
 | `.log`, `.out`, `.txt` | OpenQP geometry trajectory, basis and MO coefficients, frequencies, IR/Raman values, and normal modes |
-| `.hess.json` | OpenQP frequencies, normal modes, IR/Raman intensities, and Hessian metadata |
-| `.json` | OpenQP JSON geometry, MO energies, and MO coefficient vectors |
-| `.molden` | Geometry, basis information, and MO coefficients for generated MO surfaces |
+| `.hess.json` | Geometry, portable basis/MOs, frequencies, normal modes, IR/Raman intensities, and Hessian metadata |
+| `.json` | Geometry, portable basis/MOs, and state-specific MRSF-EKT IP/EA Dyson orbitals |
+| `.molden` | Standard Molden geometry/basis/MOs plus optional Dyson orbitals and frequency sections |
 | `.cube`, `.cub` | Direct volumetric scalar grid for true MO isosurfaces |
 | `.xyz` | Simple molecular geometry |
 
@@ -62,8 +62,9 @@ Use the `Input Data` chooser in the right panel, or drop a `.log`, `.json`, `.mo
 OpenqpView can populate the MO selector from OpenQP logs, OpenQP JSON, Molden files, and cube files. True isosurface rendering needs volumetric scalar data or enough basis information to generate a grid:
 
 - `.cube`/`.cub` files render directly.
-- `.molden` files with Cartesian S–F basis functions provide basis and MO coefficients, so OpenqpView evaluates the orbital on a 3D grid and renders marching-cubes surfaces. Molden G/H shells remain metadata-only rather than producing an incomplete surface.
-- Current OpenQP `.log` files provide basis details and AO-resolved MO coefficients, so OpenqpView can generate Cartesian S–F MO surfaces directly from the log without a Molden sidecar. Alpha and Beta orbitals remain separate for unrestricted calculations. Logs with G/H shells, or older logs without basis details, still load the geometry, frequencies, and MO metadata but require a compatible S–F Molden file or cube grid for a surface.
+- `.molden` and portable OpenQP `.json` files with Cartesian S–G basis functions provide basis and AO coefficients, so OpenqpView evaluates selected orbitals on a 3D grid and renders marching-cubes surfaces. Pure spherical D/F/G and H shells remain metadata-only rather than producing a scientifically incomplete surface.
+- Current OpenQP `.log` files provide basis details and AO-resolved MO coefficients, so OpenqpView can generate Cartesian S–G MO surfaces directly from the log without a Molden sidecar. Alpha and Beta orbitals remain separate for unrestricted calculations.
+- MRSF-EKT JSON and Molden results add one selector entry per IP/EA Dyson state. Each entry retains its state number, electron binding energy, pole strength, and AO coefficients.
 
 For optimization logs, direct MO coefficients are associated with the final geometry that produced them. Moving the optimization slider to another geometry clears the MO surface and temporarily disables the selector; returning to the matching final step enables it again. Frequency rows and normal-mode data remain available while inspecting trajectory steps.
 
@@ -71,9 +72,16 @@ The orbital controls include transparent, solid, and wire surface modes, adjusta
 
 ## Frequencies and Normal Modes
 
-Load an OpenQP Hessian `.log` or `.hess.json` sidecar to open the frequency table. OpenqpView reads the current OpenQP log table/eigenvector format and recognizes the same JSON aliases used by `openqp-app`: `freqs`/`modes`, `frequency_modes.frequencies_cm-1`/`normal_mode_eigenvectors`, and nested `vibrations` data. Select any row to inspect its frequency, IR intensity, and Raman activity. Modes with displacement vectors can be played or paused, returned to the equilibrium geometry, scaled with the amplitude control, sped up or slowed down, and displayed with normal-mode direction arrows. Negative frequencies are shown as imaginary values with an `i` suffix.
+Load an OpenQP Hessian `.log`, `.hess.json`, or combined `.molden` file to open the frequency table. OpenqpView reads the log table/eigenvectors, portable JSON aliases, and Molden `[FREQ]`/`[INT]`/`[FR-NORM-COORD]` sections. Select any row to inspect its frequency, IR intensity, and Raman activity. Modes with displacement vectors can be played or paused, returned to equilibrium, scaled, sped up or slowed down, and displayed with direction arrows. Negative frequencies are shown with an `i` suffix.
 
-Click **Open actual water Hessian + MO example**, or open `?load=samples/water-hessian-mo.log`. This is an actual OpenQP RHF-PBE/6-31G* Hessian log. The frequency panel, normal-mode animation, basis set, and AO-resolved MO coefficients all come from that one log; selecting an MO generates its surface without loading a Molden sidecar. The calculation input, `.hess.json`, and frequency Molden output are also kept in `samples/` for provenance.
+Use the example buttons, or open these URLs directly:
+
+- `?load=samples/water-hessian-mo.log` — actual OpenQP RHF-PBE/6-31G* Hessian log.
+- `?load=samples/water-hessian-mo.hess.json` — the same geometry with portable basis/MOs and all three normal modes.
+- `?load=samples/water-hessian-mo.freq.molden` — one standards-oriented Molden file containing geometry, GTOs, 19 MOs, frequencies, IR/Raman intensities, and normal coordinates.
+- `?load=samples/water-ekt-dyson.json` and `?load=samples/water-ekt-dyson.molden` — actual ROHF-BHHLYP/6-31G MRSF-EKT IP results with five state-specific Dyson orbitals.
+
+The OpenQP Molden writer emits the legacy atom/shell placeholders and scale fields used by strict third-party readers, a complete `Sym` record for every orbital, and standard frequency sections. The bundled files are also validated with an independent Molden parser.
 
 ## Export
 
