@@ -46,11 +46,11 @@ If you have Node/npm available, `npm run start` runs the same command. Because t
 
 ## Supported Files
 
-Use the `Input Data` chooser in the right panel, or drop a `.log`, `.json`, `.molden`, `.cube`, `.cub`, or `.xyz` file onto it. OpenQP `.hess.json` sidecars provide geometry, frequencies, normal-mode displacement vectors, IR intensities, and Raman activities. For OpenQP logs, the browser parses repeated `Cartesian Coordinate in Angstrom` blocks as an optimization trajectory, reads orbital metadata, and recognizes the frequency/intensity table plus `Normal mode eigenvectors` blocks when present. For other OpenQP JSON files, it reads `atoms`/`coord` geometry and `OQP::E_MO_A/B` plus `OQP::VEC_MO_A/B` orbital data. For Molden files, it reads `[Atoms]`, `[GTO]`, and `[MO]` sections, evaluates selected orbitals onto a 3D scalar grid, and renders positive/negative marching-cubes isosurfaces. For cube files, it parses the volumetric scalar grid directly and renders true positive and negative isosurfaces with WebGL marching cubes.
+Use the `Input Data` chooser in the right panel, or drop a `.log`, `.json`, `.molden`, `.cube`, `.cub`, or `.xyz` file onto it. OpenQP `.hess.json` sidecars provide geometry, frequencies, normal-mode displacement vectors, IR intensities, and Raman activities. For current OpenQP logs, the browser parses repeated `Cartesian Coordinate in Angstrom` blocks as an optimization trajectory, reads basis details and AO-resolved MO coefficients for direct MO surfaces, and recognizes the frequency/intensity table plus `Normal mode eigenvectors` blocks when present. For other OpenQP JSON files, it reads `atoms`/`coord` geometry and `OQP::E_MO_A/B` plus `OQP::VEC_MO_A/B` orbital data. For Molden files, it reads `[Atoms]`, `[GTO]`, and `[MO]` sections, evaluates selected orbitals onto a 3D scalar grid, and renders positive/negative marching-cubes isosurfaces. For cube files, it parses the volumetric scalar grid directly and renders true positive and negative isosurfaces with WebGL marching cubes.
 
 | File type | Purpose |
 | --- | --- |
-| `.log`, `.out`, `.txt` | OpenQP geometry trajectory, orbital metadata, frequencies, IR/Raman values, and normal modes |
+| `.log`, `.out`, `.txt` | OpenQP geometry trajectory, basis and MO coefficients, frequencies, IR/Raman values, and normal modes |
 | `.hess.json` | OpenQP frequencies, normal modes, IR/Raman intensities, and Hessian metadata |
 | `.json` | OpenQP JSON geometry, MO energies, and MO coefficient vectors |
 | `.molden` | Geometry, basis information, and MO coefficients for generated MO surfaces |
@@ -63,7 +63,7 @@ OpenqpView can populate the MO selector from OpenQP logs, OpenQP JSON, Molden fi
 
 - `.cube`/`.cub` files render directly.
 - `.molden` files provide basis and MO coefficients, so OpenqpView evaluates the orbital on a 3D grid and renders marching-cubes surfaces.
-- OpenQP `.log` and `.json` files provide orbital metadata and coefficients; if a matching Molden sample is available, OpenqpView can use it to generate the surface.
+- Current OpenQP `.log` files provide basis details and AO-resolved MO coefficients, so OpenqpView can generate the MO surface directly from the log without a Molden sidecar. Older logs that omit basis details still load as MO metadata.
 
 The orbital controls include transparent, solid, and wire surface modes, adjustable isovalue, MO size, and separate blue/pink opacity controls.
 
@@ -71,7 +71,7 @@ The orbital controls include transparent, solid, and wire surface modes, adjusta
 
 Load an OpenQP Hessian `.log` or `.hess.json` sidecar to open the frequency table. OpenqpView reads the current OpenQP log table/eigenvector format and recognizes the same JSON aliases used by `openqp-app`: `freqs`/`modes`, `frequency_modes.frequencies_cm-1`/`normal_mode_eigenvectors`, and nested `vibrations` data. Select any row to inspect its frequency, IR intensity, and Raman activity. Modes with displacement vectors can be played or paused, returned to the equilibrium geometry, scaled with the amplitude control, sped up or slowed down, and displayed with normal-mode direction arrows. Negative frequencies are shown as imaginary values with an `i` suffix.
 
-Click **Open actual water Hessian + MO example**, or open `?load=samples/water-hessian-mo.log`. This is an actual OpenQP RHF-PBE/6-31G* Hessian log. Its matching OpenQP Molden file is loaded when an MO is selected, while the frequency panel and normal-mode animation remain available. The calculation input, `.hess.json`, and frequency Molden output are also kept in `samples/` for provenance.
+Click **Open actual water Hessian + MO example**, or open `?load=samples/water-hessian-mo.log`. This is an actual OpenQP RHF-PBE/6-31G* Hessian log. The frequency panel, normal-mode animation, basis set, and AO-resolved MO coefficients all come from that one log; selecting an MO generates its surface without loading a Molden sidecar. The calculation input, `.hess.json`, and frequency Molden output are also kept in `samples/` for provenance.
 
 ## Export
 

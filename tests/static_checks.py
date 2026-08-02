@@ -73,7 +73,11 @@ def test_actual_hessian_log_and_matching_molden_sample_exist():
     ]:
         assert (ROOT / "samples" / sample).exists()
     assert 'fetch("samples/water-hessian-mo.log"' in js
-    assert 'return "samples/water-hessian-mo.molden"' in js
+    assert "function parseOpenQpLogBasis" in js
+    assert 'orbitalRenderSource = hasLogOrbitalGridData' in js
+    assert '"log-basis"' in js
+    assert "orbital.coefficients[aoIndex] = coefficient" in js
+    assert "OpenQP log basis and MO coefficients" in js
 
 
 def test_initial_threejs_lighting_has_camera_fill():
@@ -89,6 +93,24 @@ def test_molden_basis_is_evaluated_in_bohr():
     js = read("app.js")
     assert "const angstromToBohr = 1 / BOHR_TO_ANGSTROM;" in js
     assert "(x - atom[1]) * angstromToBohr" in js
+
+
+def test_molecule_style_does_not_rebuild_mo_volume():
+    js = read("app.js")
+    assert "updateMoleculeStyle(molecule)" in js
+    assert "state.volumeRenderer.updateMoleculeStyle(state.molecule);" in js
+
+
+def test_new_molecule_resets_previous_calculation_data():
+    js = read("app.js")
+    set_molecule = js[js.index("function setMolecule("):js.index("function clearVolumeRenderer(")]
+    assert "clearVibrationData" in set_molecule
+    assert "clearVolumeRenderer" in set_molecule
+    assert "state.trajectory = [];" in set_molecule
+    assert "state.orbitals = [];" in set_molecule
+    assert "state.selectedOrbital = null;" in set_molecule
+    assert 'state.orbitalRenderSource = "none";' in set_molecule
+    assert "state.moldenBasis = null;" in set_molecule
 
 
 def test_hessian_assets_are_loaded_before_the_app():
@@ -109,6 +131,8 @@ if __name__ == "__main__":
         test_actual_hessian_log_and_matching_molden_sample_exist,
         test_initial_threejs_lighting_has_camera_fill,
         test_molden_basis_is_evaluated_in_bohr,
+        test_molecule_style_does_not_rebuild_mo_volume,
+        test_new_molecule_resets_previous_calculation_data,
         test_hessian_assets_are_loaded_before_the_app,
     ]:
         test()
