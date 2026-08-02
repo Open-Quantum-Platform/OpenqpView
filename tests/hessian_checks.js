@@ -14,6 +14,15 @@ assert.equal(parsed.units.ir, "km/mol");
 assert.equal(parsed.modes[0].vectors.length, 3);
 assert.ok(Math.abs(Math.max(...parsed.modes[0].vectors.map((vector) => Math.hypot(vector.x, vector.y, vector.z))) - 1) < 1e-12);
 
+const logSample = fs.readFileSync(path.join(__dirname, "..", "samples", "water-hessian-mo.log"), "utf8");
+const parsedLog = hessian.extractVibrationsFromLog(logSample, 3);
+assert.equal(parsedLog.modes.length, 3);
+assert.equal(parsedLog.modes[0].frequency, 1577.2894);
+assert.equal(parsedLog.modes[0].ir, 3.389761);
+assert.equal(parsedLog.modes[0].raman, 89.794824);
+assert.equal(parsedLog.modes[0].vectors.length, 3);
+assert.ok(Math.abs(Math.max(...parsedLog.modes[0].vectors.map((vector) => Math.hypot(vector.x, vector.y, vector.z))) - 1) < 1e-12);
+
 const aliases = hessian.extractVibrations({
   atoms: [8, 1],
   coord: [0, 0, 0, 0, 0, 2],
@@ -38,4 +47,4 @@ assert.deepEqual(summary, {
   metadata: { backend: "test" }
 });
 
-console.log("PASS Hessian JSON parsing, aliases, imaginary frequencies, and mode normalization");
+console.log("PASS Hessian JSON/log parsing, aliases, intensities, imaginary frequencies, and mode normalization");

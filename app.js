@@ -127,7 +127,7 @@ const state = {
   numbering: false,
   axes: false,
   polish: 0,
-  light: 0.5,
+  light: 0.68,
   zoom: 100,
   spin: true,
   rotX: -0.45,
@@ -912,11 +912,13 @@ function parseOpenQpLog(text, fileName = "OpenQP log") {
     frame.convergence = convergences[index] || null;
   });
 
-  const orbitals = parseLastOrbitalBlock(lines, frames.at(-1)?.molecule.atoms.length || natom);
+  const atomCount = frames.at(-1)?.molecule.atoms.length || natom;
+  const orbitals = parseLastOrbitalBlock(lines, atomCount);
+  const vibrationData = OpenQPHessian.extractVibrationsFromLog(text, atomCount);
   if (!frames.length) {
     throw new Error("No OpenQP Cartesian coordinate blocks were found.");
   }
-  return { frames, orbitals };
+  return { frames, orbitals, vibrationData };
 }
 
 function parseLastOrbitalBlock(lines, atomCount) {
@@ -1134,11 +1136,20 @@ function loadOpenQpLogText(text, fileName) {
   state.selectedOrbital = null;
   state.orbitalRenderSource = parsed.orbitals.length ? "metadata" : "none";
   setTrajectoryFrame(state.frameIndex);
+  state.vibrations = parsed.vibrationData.modes;
+  state.vibrationUnits = parsed.vibrationData.units;
+  state.vibrationBaseMolecule = parsed.vibrationData.modes.length ? cloneMolecule(state.molecule) : null;
+  state.selectedVibration = parsed.vibrationData.modes.length ? 0 : null;
+  state.hessianSummary = null;
   updateOrbitalUi();
+  updateVibrationUi();
   document.querySelector("#sourceName").textContent = fileName;
   state.sourceFileName = fileName;
-  document.querySelector("#sourceMeta").textContent = `Log metadata: ${parsed.frames.length} steps, ${parsed.orbitals.length} orbitals`;
-  setStatus(`Loaded ${fileName}. This is log metadata only; choose the .molden file to generate MO surfaces.`);
+  document.querySelector("#sourceMeta").textContent = `OpenQP log: ${parsed.frames.length} geometry block${parsed.frames.length === 1 ? "" : "s"}, ${parsed.orbitals.length} orbitals, ${parsed.vibrationData.modes.length} modes`;
+  if (parsed.vibrationData.modes.length) {
+    selectVibrationMode(0, { play: parsed.vibrationData.modes[0].vectors.length > 0 });
+  }
+  setStatus(`Loaded ${fileName}${parsed.vibrationData.modes.length ? ` with ${parsed.vibrationData.modes.length} vibrational modes` : ""}. Select an MO to load its matching Molden surface when available.`);
 }
 
 async function autoLoadMatchingMoldenForMetadata(selectedIndex) {
@@ -1152,7 +1163,13 @@ async function autoLoadMatchingMoldenForMetadata(selectedIndex) {
   if (!response.ok) {
     throw new Error(`Could not load matching Molden data: ${response.status}`);
   }
-  loadMoldenText(await response.text(), "thymine-s0.molden", { preserveView: true });
+  const matchingFileName = sampleUrl.split("/").at(-1) || "matching.molden";
+  loadMoldenText(await response.text(), matchingFileName, {
+    preserveView: true,
+    keepTrajectory: true,
+    keepVibrations: true,
+    preserveSource: true
+  });
   const nextIndex = Math.min(selectedIndex, state.orbitals.length - 1);
   orbitalSelect.value = String(nextIndex);
   state.selectedOrbital = state.orbitals[nextIndex];
@@ -1160,6 +1177,9 @@ async function autoLoadMatchingMoldenForMetadata(selectedIndex) {
 }
 
 function matchingMoldenUrl(fileName) {
+  if (/^water-hessian-mo\.(log|json)$/i.test(fileName)) {
+    return "samples/water-hessian-mo.molden";
+  }
   if (/^S[01]\.(log|json)$/i.test(fileName) || /thymine/i.test(fileName)) {
     return "samples/thymine-s0.molden";
   }
@@ -1171,19 +1191,33 @@ function loadMoldenText(text, fileName, options = {}) {
     clearVolumeRenderer();
   }
   const parsed = parseMolden(text, fileName);
-  state.trajectory = [];
-  state.frameIndex = 0;
+  if (!options.keepTrajectory) {
+    state.trajectory = [];
+    state.frameIndex = 0;
+  }
   state.moldenBasis = parsed.basis;
   state.orbitals = parsed.orbitals;
   state.selectedOrbital = null;
   state.orbitalRenderSource = parsed.orbitals.length ? "molden" : "none";
-  setMolecule(parsed.molecule, { keepTrajectory: true, keepView: options.preserveView });
+  setMolecule(parsed.molecule, {
+    keepTrajectory: true,
+    keepView: options.preserveView,
+    keepVibrations: options.keepVibrations
+  });
+  if (options.keepVibrations && state.vibrations.length) {
+    state.vibrationBaseMolecule = cloneMolecule(state.molecule);
+    applyVibrationFrame();
+    syncNormalModeRenderer();
+  }
   updateTrajectoryUi();
   updateOrbitalUi();
-  document.querySelector("#sourceName").textContent = fileName;
-  state.sourceFileName = fileName;
-  document.querySelector("#sourceMeta").textContent = `Molden ${parsed.atomUnit}, ${parsed.orbitals.length} orbitals`;
-  setStatus(`Loaded Molden geometry and ${parsed.orbitals.length} orbitals from ${fileName}.`);
+  updateVibrationUi();
+  if (!options.preserveSource) {
+    document.querySelector("#sourceName").textContent = fileName;
+    state.sourceFileName = fileName;
+    document.querySelector("#sourceMeta").textContent = `Molden ${parsed.atomUnit}, ${parsed.orbitals.length} orbitals`;
+    setStatus(`Loaded Molden geometry and ${parsed.orbitals.length} orbitals from ${fileName}.`);
+  }
 }
 
 async function loadMoleculeJsonText(text, fileName) {
@@ -1781,6 +1815,7 @@ async function renderCubeVolume(cube, options = {}) {
   state.volumeRenderer.setVolume(cube, volumeOptions(), {
     preserveView: options.preserveView ?? hadRenderer
   });
+  syncNormalModeRenderer();
 }
 
 async function renderStructureView(options = {}) {
@@ -1884,15 +1919,16 @@ function buildMoldenOrbitalVolume(molecule, basisFunctions, orbital) {
 
 function evaluateMoldenOrbitalAt(x, y, z, atoms, basisFunctions, coefficients) {
   let value = 0;
+  const angstromToBohr = 1 / BOHR_TO_ANGSTROM;
   for (let i = 0; i < basisFunctions.length; i += 1) {
     const coefficient = coefficients[i];
     if (!coefficient) continue;
     const basis = basisFunctions[i];
     const atom = atoms[basis.atomIndex];
     if (!atom) continue;
-    const dx = x - atom[1];
-    const dy = y - atom[2];
-    const dz = z - atom[3];
+    const dx = (x - atom[1]) * angstromToBohr;
+    const dy = (y - atom[2]) * angstromToBohr;
+    const dz = (z - atom[3]) * angstromToBohr;
     const r2 = dx * dx + dy * dy + dz * dz;
     const polynomial = Math.pow(dx, basis.powers[0]) * Math.pow(dy, basis.powers[1]) * Math.pow(dz, basis.powers[2]);
     let contracted = 0;
@@ -1944,19 +1980,26 @@ async function createVolumeRenderer(host) {
 
   const hemisphere = new THREE.HemisphereLight(0xdcefff, 0x10151a, 1);
   scene.add(hemisphere);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambient);
   const key = new THREE.DirectionalLight(0xffffff, 0.96);
   key.position.set(4, 7, 6);
   scene.add(key);
   const rim = new THREE.DirectionalLight(0x8fb8ff, 0.24);
   rim.position.set(-6, 3, -5);
   scene.add(rim);
+  const cameraFill = new THREE.DirectionalLight(0xf4f7ff, 0.72);
+  scene.add(cameraFill);
+  scene.add(cameraFill.target);
 
   function updateLighting(light = state.light) {
     const t = Math.min(1, Math.max(0, Number(light) || 0));
     renderer.toneMappingExposure = mix(0.58, 1.18, t);
     hemisphere.intensity = mix(0.85, 2.15, t);
+    ambient.intensity = mix(0.28, 0.9, t);
     key.intensity = mix(0.58, 1.65, t);
     rim.intensity = mix(0.1, 0.58, t);
+    cameraFill.intensity = mix(0.42, 1.2, t);
   }
 
   const atomGroup = new THREE.Group();
@@ -2238,6 +2281,8 @@ async function createVolumeRenderer(host) {
 
   function animate() {
     controls.update();
+    cameraFill.position.copy(camera.position);
+    cameraFill.target.position.copy(controls.target);
     renderer.render(scene, camera);
     animationFrame = requestAnimationFrame(animate);
   }
@@ -3058,6 +3103,16 @@ function attachEvents() {
   const logFileInput = document.querySelector("#logFileInput");
   const fileDrop = document.querySelector("#fileDrop");
   const pasteDataInput = document.querySelector("#pasteDataInput");
+  document.querySelector("#loadHessianLogSample").addEventListener("click", async () => {
+    try {
+      setStatus("Loading the actual OpenQP water Hessian example...");
+      const response = await fetch("samples/water-hessian-mo.log", { cache: "no-store" });
+      if (!response.ok) throw new Error(`Could not load the example: HTTP ${response.status}`);
+      await loadTextByFormat(await response.text(), "water-hessian-mo.log");
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  });
   logFileInput.addEventListener("change", () => {
     if (logFileInput.files?.[0]) {
       readLogFile(logFileInput.files[0]);

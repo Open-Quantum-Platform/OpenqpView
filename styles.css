@@ -290,6 +290,16 @@ h2 {
   border-color: rgba(255, 122, 184, 0.58);
 }
 
+.example-load-button {
+  width: 100%;
+  border-color: rgba(134, 183, 255, 0.48);
+  background: linear-gradient(135deg, rgba(134, 183, 255, 0.2), rgba(255, 122, 184, 0.14));
+}
+
+.example-load-button:hover {
+  border-color: rgba(255, 122, 184, 0.66);
+}
+
 .file-drop input {
   position: absolute;
   width: 1px;
