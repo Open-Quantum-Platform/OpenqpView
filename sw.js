@@ -1,4 +1,4 @@
-const CACHE_NAME = "openqpview-v64";
+const CACHE_NAME = "openqpview-v65";
 const ASSETS = [
   "./",
   "index.html",

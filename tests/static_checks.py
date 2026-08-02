@@ -17,6 +17,7 @@ def test_unified_input_panel_controls_exist():
     assert 'id="clearPastedData"' in html
     assert 'id="loadHessianLogSample"' in html
     assert 'aria-label="Paste molecular data"' in html
+    assert 'aria-label="Optimization step"' in html
     assert "or drop/paste OpenQP log, Hessian JSON, XYZ, Molden, or cube data" in html
 
 
@@ -60,6 +61,8 @@ def test_hessian_frequency_and_animation_controls_exist():
     assert "extractVibrationsFromLog" in parser
     assert "Normal mode eigenvectors" in parser
     assert "keepVibrations: true" in js
+    assert "if (!mode?.vectors?.length)" in js
+    assert "state.molecule = normalizeMolecule(cloneMolecule(base));" in js
 
 
 def test_actual_hessian_log_and_matching_molden_sample_exist():
@@ -103,14 +106,61 @@ def test_molecule_style_does_not_rebuild_mo_volume():
 
 def test_new_molecule_resets_previous_calculation_data():
     js = read("app.js")
-    set_molecule = js[js.index("function setMolecule("):js.index("function clearVolumeRenderer(")]
+    set_molecule = js[js.index("async function setMolecule("):js.index("function clearVolumeData(")]
     assert "clearVibrationData" in set_molecule
-    assert "clearVolumeRenderer" in set_molecule
+    assert "clearVolumeData" in set_molecule
     assert "state.trajectory = [];" in set_molecule
     assert "state.orbitals = [];" in set_molecule
     assert "state.selectedOrbital = null;" in set_molecule
     assert 'state.orbitalRenderSource = "none";' in set_molecule
     assert "state.moldenBasis = null;" in set_molecule
+
+
+def test_log_loading_preserves_webgl_until_parsing_succeeds():
+    js = read("app.js")
+    loader = js[js.index("async function loadOpenQpLogText("):js.index("async function autoLoadMatchingMoldenForMetadata(")]
+    clear_volume = js[js.index("function clearVolumeData("):js.index("function normalizeMolecule(")]
+    text_router = js[js.index("async function loadTextByFormat("):js.index("function looksLikeCube(")]
+    assert loader.index("const parsed = parseOpenQpLog") < loader.index("clearVolumeData();")
+    assert "await setTrajectoryFrame(state.frameIndex, { keepVibrations: false, preserveView: false });" in loader
+    assert "state.volumeRenderer.clearSurfaces();" in clear_volume
+    assert ".dispose()" not in clear_volume
+    assert 'viewerPanel.classList.remove("volume-mode")' not in clear_volume
+    assert "await loadOpenQpLogText" in text_router
+    assert "lines[i]?.match(/Geometry Optimization Convergence" in js
+
+
+def test_webgl_vdw_uses_element_radii_without_bonds():
+    js = read("app.js")
+    molecule_scene = js[js.index("function addMoleculeToScene("):js.index("function updateBondObject(")]
+    assert "element.vdw * VDW_SCALE" in molecule_scene
+    assert 'if (style !== "space-fill")' in molecule_scene
+    assert "function moleculeStyleFrameRadius" in js
+    assert "baseExtent + maxVdwRadius * 2" in js
+    assert "state.volumeRenderer.setMolecule(state.molecule, { preserveView: false" in js
+
+
+def test_log_orbitals_preserve_spin_and_supported_basis_accuracy():
+    js = read("app.js")
+    assert 'const orbitalKey = `${activeSpin}:${orbitalIndex}`;' in js
+    assert "spin: activeSpin" in js
+    assert "cartesianComponentNormalizationScale(powers)" in js
+    assert "basis.normalizationScale || 1" in js
+    assert "return powers[shell] || [];" in js
+    assert "unsupportedShells.add(shell.toUpperCase())" in js
+    assert "parsed.basis.supported !== false" in js
+
+
+def test_trajectory_keeps_modes_and_limits_mo_to_matching_frame():
+    js = read("app.js")
+    trajectory = js[js.index("async function setTrajectoryFrame("):js.index("function updateTrajectoryUi(")]
+    assert "keepVibrations" in trajectory
+    assert "clearVolumeData();" in trajectory
+    assert "state.vibrationBaseMolecule = cloneMolecule(state.molecule);" in trajectory
+    assert "isOrbitalFrameActive()" in trajectory
+    assert "orbitalFrameIndex" in js
+    assert "orbitalSelect.disabled = !isOrbitalFrameActive();" in js
+    assert "This MO belongs to trajectory step" in js
 
 
 def test_hessian_assets_are_loaded_before_the_app():
@@ -119,6 +169,7 @@ def test_hessian_assets_are_loaded_before_the_app():
     assert html.index('src="hessian.js"') < html.index('src="app.js"')
     assert (ROOT / "samples" / "water-hessian.json").exists()
     assert "cp index.html hessian.js app.js" in pages_workflow
+    assert "- `hessian.js`" in read("README.md")
 
 
 if __name__ == "__main__":
@@ -133,6 +184,10 @@ if __name__ == "__main__":
         test_molden_basis_is_evaluated_in_bohr,
         test_molecule_style_does_not_rebuild_mo_volume,
         test_new_molecule_resets_previous_calculation_data,
+        test_log_loading_preserves_webgl_until_parsing_succeeds,
+        test_webgl_vdw_uses_element_radii_without_bonds,
+        test_log_orbitals_preserve_spin_and_supported_basis_accuracy,
+        test_trajectory_keeps_modes_and_limits_mo_to_matching_frame,
         test_hessian_assets_are_loaded_before_the_app,
     ]:
         test()

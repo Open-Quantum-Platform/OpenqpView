@@ -8,9 +8,11 @@
   }
 
   function numericValue(value) {
+    if (value === null || value === undefined) return NaN;
     if (typeof value === "number") return Number.isFinite(value) ? value : NaN;
-    if (typeof value !== "string") return Number(value);
+    if (typeof value !== "string") return NaN;
     const normalized = value.trim().replace(/[dD]/g, "E");
+    if (!normalized) return NaN;
     if (/i$/i.test(normalized)) {
       const imaginary = Number(normalized.slice(0, -1));
       return Number.isFinite(imaginary) ? -Math.abs(imaginary) : NaN;
@@ -222,10 +224,13 @@
       }
     }
 
-    const rawModes = tableRows.length ? tableRows : vectorModes;
+    const hasFrequencyTable = tableRows.length > 0;
+    const rawModes = hasFrequencyTable ? tableRows : vectorModes;
     const modes = rawModes.map((row, position) => {
-      const vectorMode = vectorModes.find((mode) => mode.index === row.index) || vectorModes[position];
-      const frequency = Number.isFinite(vectorMode?.frequency) ? vectorMode.frequency : row.frequency;
+      const vectorMode = hasFrequencyTable
+        ? vectorModes.find((mode) => mode.index === row.index)
+        : vectorModes.find((mode) => mode.index === row.index) || vectorModes[position];
+      const frequency = row.frequency;
       const ir = numericValue(row.ir);
       const raman = numericValue(row.raman);
       return {
