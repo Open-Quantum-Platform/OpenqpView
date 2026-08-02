@@ -838,6 +838,9 @@ function orbitalStatusText() {
   if (state.orbitalRenderSource === "molden") {
     return "Molden orbitals loaded. Select an MO to evaluate it on a 3D grid and render marching-cubes isosurfaces.";
   }
+  if (state.orbitalRenderSource === "log-basis") {
+    return "OpenQP log basis and MO coefficients loaded. Select an MO to generate its surface directly from this log.";
+  }
   if (state.orbitalRenderSource === "metadata") {
     return "This file contains MO metadata but no volumetric grid. Export/upload a .cube/.cub orbital grid to render the true surface.";
   }
@@ -914,11 +917,54 @@ function parseOpenQpLog(text, fileName = "OpenQP log") {
 
   const atomCount = frames.at(-1)?.molecule.atoms.length || natom;
   const orbitals = parseLastOrbitalBlock(lines, atomCount);
+  const basis = parseOpenQpLogBasis(lines, atomCount);
   const vibrationData = OpenQPHessian.extractVibrationsFromLog(text, atomCount);
   if (!frames.length) {
     throw new Error("No OpenQP Cartesian coordinate blocks were found.");
   }
-  return { frames, orbitals, vibrationData };
+  return { frames, orbitals, basis, vibrationData };
+}
+
+function parseOpenQpLogBasis(lines, atomCount) {
+  const start = lines.findIndex((line) => line.includes("Basis Set Details"));
+  if (start < 0) return { aoToAtom: [], basisFunctions: [] };
+  const end = lines.findIndex((line, index) => index > start && line.includes("End of Basis Set Data"));
+  if (end < 0) return { aoToAtom: [], basisFunctions: [] };
+
+  const aoToAtom = [];
+  const basisFunctions = [];
+  let currentAtom = -1;
+
+  for (let index = start + 1; index < end; index += 1) {
+    const rawLine = lines[index];
+    const trimmed = rawLine.trim();
+    const indentation = rawLine.match(/^\s*/)?.[0].length || 0;
+    if (/^[A-Z][a-z]?$/.test(trimmed) && indentation < 8) {
+      currentAtom += 1;
+      continue;
+    }
+
+    const shell = trimmed.match(/^([SPDFGH])$/i)?.[1]?.toLowerCase();
+    if (!shell || indentation < 8 || currentAtom < 0 || currentAtom >= atomCount) continue;
+    const primitives = [];
+    let primitiveIndex = index + 1;
+    for (; primitiveIndex < end; primitiveIndex += 1) {
+      const primitive = lines[primitiveIndex].match(/^\s*([-+0-9.DEd]+)\s+([-+0-9.DEd]+)\s*$/);
+      if (!primitive) break;
+      primitives.push({
+        exponent: OpenQPHessian.numericValue(primitive[1]),
+        coefficient: OpenQPHessian.numericValue(primitive[2])
+      });
+    }
+    if (!primitives.length) continue;
+    cartesianShellPowers(shell).forEach((powers) => {
+      aoToAtom.push(currentAtom);
+      basisFunctions.push({ atomIndex: currentAtom, powers, primitives });
+    });
+    index = primitiveIndex - 1;
+  }
+
+  return { aoToAtom, basisFunctions };
 }
 
 function parseLastOrbitalBlock(lines, atomCount) {
@@ -941,6 +987,7 @@ function parseLastOrbitalBlock(lines, atomCount) {
           index: orbitalIndex,
           energy: energies[column],
           source: "OpenQP log",
+          coefficients: [],
           atomWeights: Array(atomCount).fill(0),
           atomSigned: Array(atomCount).fill(0)
         });
@@ -948,14 +995,16 @@ function parseLastOrbitalBlock(lines, atomCount) {
     });
 
     for (let j = i + 2; j < lines.length; j += 1) {
-      const row = lines[j].match(/^\s*\d+\s+[A-Za-z]+\s+(\d+)\s+\S+\s+(.+)$/);
+      const row = lines[j].match(/^\s*(\d+)\s+[A-Za-z]+\s+(\d+)\s+\S+\s+(.+)$/);
       if (!row) break;
-      const atomIndex = Number(row[1]) - 1;
-      const values = row[2].trim().split(/\s+/).map(Number);
+      const aoIndex = Number(row[1]) - 1;
+      const atomIndex = Number(row[2]) - 1;
+      const values = row[3].trim().split(/\s+/).map(Number);
       indices.forEach((orbitalIndex, column) => {
         const orbital = orbitals.get(orbitalIndex);
         const coefficient = values[column];
         if (orbital && atomIndex >= 0 && atomIndex < atomCount && Number.isFinite(coefficient)) {
+          orbital.coefficients[aoIndex] = coefficient;
           orbital.atomWeights[atomIndex] += coefficient * coefficient;
           orbital.atomSigned[atomIndex] += coefficient;
         }
@@ -1134,8 +1183,13 @@ function loadOpenQpLogText(text, fileName) {
   state.frameIndex = parsed.frames.length - 1;
   state.orbitals = parsed.orbitals;
   state.selectedOrbital = null;
-  state.orbitalRenderSource = parsed.orbitals.length ? "metadata" : "none";
   setTrajectoryFrame(state.frameIndex);
+  state.moldenBasis = parsed.basis;
+  const hasLogOrbitalGridData = parsed.basis.basisFunctions.length > 0
+    && parsed.orbitals.some((orbital) => orbital.coefficients?.length > 0);
+  state.orbitalRenderSource = hasLogOrbitalGridData
+    ? "log-basis"
+    : parsed.orbitals.length ? "metadata" : "none";
   state.vibrations = parsed.vibrationData.modes;
   state.vibrationUnits = parsed.vibrationData.units;
   state.vibrationBaseMolecule = parsed.vibrationData.modes.length ? cloneMolecule(state.molecule) : null;
@@ -1145,11 +1199,11 @@ function loadOpenQpLogText(text, fileName) {
   updateVibrationUi();
   document.querySelector("#sourceName").textContent = fileName;
   state.sourceFileName = fileName;
-  document.querySelector("#sourceMeta").textContent = `OpenQP log: ${parsed.frames.length} geometry block${parsed.frames.length === 1 ? "" : "s"}, ${parsed.orbitals.length} orbitals, ${parsed.vibrationData.modes.length} modes`;
+  document.querySelector("#sourceMeta").textContent = `OpenQP log: ${parsed.frames.length} geometry block${parsed.frames.length === 1 ? "" : "s"}, ${parsed.orbitals.length} orbitals, ${parsed.basis.basisFunctions.length} AOs, ${parsed.vibrationData.modes.length} modes`;
   if (parsed.vibrationData.modes.length) {
     selectVibrationMode(0, { play: parsed.vibrationData.modes[0].vectors.length > 0 });
   }
-  setStatus(`Loaded ${fileName}${parsed.vibrationData.modes.length ? ` with ${parsed.vibrationData.modes.length} vibrational modes` : ""}. Select an MO to load its matching Molden surface when available.`);
+  setStatus(`Loaded ${fileName}${parsed.vibrationData.modes.length ? ` with ${parsed.vibrationData.modes.length} vibrational modes` : ""}${hasLogOrbitalGridData ? " and direct MO surface data" : ""}.`);
 }
 
 async function autoLoadMatchingMoldenForMetadata(selectedIndex) {
@@ -1173,13 +1227,10 @@ async function autoLoadMatchingMoldenForMetadata(selectedIndex) {
   const nextIndex = Math.min(selectedIndex, state.orbitals.length - 1);
   orbitalSelect.value = String(nextIndex);
   state.selectedOrbital = state.orbitals[nextIndex];
-  await renderMoldenOrbital(state.selectedOrbital);
+  await renderBasisOrbital(state.selectedOrbital);
 }
 
 function matchingMoldenUrl(fileName) {
-  if (/^water-hessian-mo\.(log|json)$/i.test(fileName)) {
-    return "samples/water-hessian-mo.molden";
-  }
   if (/^S[01]\.(log|json)$/i.test(fileName) || /thymine/i.test(fileName)) {
     return "samples/thymine-s0.molden";
   }
@@ -1834,7 +1885,7 @@ async function renderStructureView(options = {}) {
   syncNormalModeRenderer();
 }
 
-async function renderMoldenOrbital(orbital) {
+async function renderBasisOrbital(orbital) {
   const requestId = ++orbitalRenderRequest;
   if (!state.moldenBasis?.basisFunctions?.length || !orbital?.coefficients?.length) {
     setOrbitalStatus("This orbital has metadata only. Upload a cube grid or a Molden file with [GTO] and [MO] sections.", { log: true });
@@ -1842,7 +1893,7 @@ async function renderMoldenOrbital(orbital) {
   }
   setOrbitalStatus(`Evaluating ${orbital.spin || ""} MO ${orbital.index} on a 3D grid...`);
   await new Promise((resolve) => requestAnimationFrame(resolve));
-  const cube = buildMoldenOrbitalVolume(state.molecule, state.moldenBasis.basisFunctions, orbital);
+  const cube = buildBasisOrbitalVolume(state.molecule, state.moldenBasis.basisFunctions, orbital);
   if (!cube.maxAbs || cube.maxAbs <= 0) {
     throw new Error("The selected Molden orbital evaluated to an empty grid. Try a different MO or check basis normalization.");
   }
@@ -1856,10 +1907,13 @@ async function renderMoldenOrbital(orbital) {
     return;
   }
   document.querySelector("#sourceMeta").textContent = `${cube.axes.map((axis) => axis.count).join(" x ")} generated MO grid`;
-  setOrbitalStatus(`${orbital.spin || ""} MO ${orbital.index} rendered from Molden coefficients with marching cubes.`, { log: true });
+  const sourceLabel = orbital.source === "OpenQP log"
+    ? "OpenQP log basis and MO coefficients"
+    : "Molden coefficients";
+  setOrbitalStatus(`${orbital.spin || ""} MO ${orbital.index} rendered directly from ${sourceLabel} with marching cubes.`, { log: true });
 }
 
-function buildMoldenOrbitalVolume(molecule, basisFunctions, orbital) {
+function buildBasisOrbitalVolume(molecule, basisFunctions, orbital) {
   const resolution = 72;
   const margin = 4.5;
   const bounds = molecule.atoms.reduce(
@@ -2110,6 +2164,21 @@ async function createVolumeRenderer(host) {
     }
   }
 
+  function rebuildMoleculeStyle(molecule) {
+    clearGroup(atomGroup);
+    clearGroup(annotationGroup);
+    clearGroup(axesGroup);
+    currentMolecule = molecule;
+    addMoleculeToScene(THREE, atomGroup, molecule);
+    addAtomAnnotationsToScene(THREE, annotationGroup, molecule, {
+      labels: state.labels,
+      numbering: state.numbering
+    });
+    const center = currentView?.center || molecule.center || moleculeCenter(molecule);
+    const radius = currentView?.radius || Math.max(molecule.extent || moleculeExtent(molecule), 4);
+    updateAxesHelper(THREE, axesGroup, { center, radius, visible: state.axes });
+  }
+
   function updateMoleculeSceneCoordinates(molecule) {
     const atomMeshes = atomGroup.children.filter((child) => child.userData.materialKind === "atom");
     if (atomMeshes.length !== molecule.atoms.length) {
@@ -2180,6 +2249,10 @@ async function createVolumeRenderer(host) {
       positiveSurface = null;
       negativeSurface = null;
       setMoleculeScene(molecule, viewOptions);
+      api.resize();
+    },
+    updateMoleculeStyle(molecule) {
+      rebuildMoleculeStyle(molecule);
       api.resize();
     },
     updateMoleculeCoordinates(molecule) {
@@ -2941,7 +3014,8 @@ function attachEvents() {
       document.querySelectorAll(".style-choice").forEach((choice) => choice.classList.toggle("active", choice === button));
       if (state.volumeRenderer) {
         if (state.volumeData) {
-          renderCubeVolume(state.volumeData).catch((error) => setStatus(error.message, true));
+          state.volumeRenderer.updateMoleculeStyle(state.molecule);
+          syncNormalModeRenderer();
         } else {
           state.volumeRenderer.setMolecule(state.molecule, { preserveView: true, framePadding: 2.2 });
           syncNormalModeRenderer();
@@ -3073,8 +3147,8 @@ function attachEvents() {
     }
     if (state.orbitalRenderSource === "cube") {
       setOrbitalStatus(`${state.selectedOrbital.spin || ""} MO ${state.selectedOrbital.index} selected. Rendering cube-grid positive/negative isosurfaces.`, { log: true });
-    } else if (state.orbitalRenderSource === "molden") {
-      renderMoldenOrbital(state.selectedOrbital).catch((error) => {
+    } else if (state.orbitalRenderSource === "molden" || state.orbitalRenderSource === "log-basis") {
+      renderBasisOrbital(state.selectedOrbital).catch((error) => {
         console.error(error);
         setOrbitalStatus(error.message, { log: true, isError: true });
         setStatus(error.message, true);
