@@ -698,6 +698,14 @@ function clearVibrationData(options = {}) {
   updateVibrationUi();
 }
 
+function clearVibrationView() {
+  stopVibrationAnimation();
+  state.selectedVibration = null;
+  state.vibrationPhase = 0;
+  state.volumeRenderer?.setNormalMode?.(null);
+  updateVibrationUi();
+}
+
 function updateVibrationUi() {
   const modes = state.vibrations;
   vibrationPanel.hidden = modes.length === 0;
@@ -733,7 +741,7 @@ function updateVibrationUi() {
       button.appendChild(cell);
     });
     button.addEventListener("click", () => {
-      selectVibrationMode(index, { play: state.vibrationPlaying });
+      selectVibrationMode(index, { play: mode.vectors.length > 0 });
       addLogEntry(`Normal mode ${mode.index} selected: ${formatFrequency(mode.frequency)} cm⁻¹.`);
     });
     frequencyRows.appendChild(button);
@@ -3568,8 +3576,8 @@ function attachEvents() {
   });
 
   document.querySelector("#vibrationClear").addEventListener("click", () => {
-    clearVibrationData({ restoreGeometry: true });
-    addLogEntry("Vibrational frequencies and normal modes cleared; molecule and orbitals retained.");
+    clearVibrationView();
+    addLogEntry("Normal-mode view cleared at equilibrium geometry; frequencies retained.");
   });
 
   document.querySelector("#modeVectorToggle").addEventListener("change", (event) => {

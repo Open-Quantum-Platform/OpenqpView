@@ -52,10 +52,11 @@ def test_hessian_frequency_and_animation_controls_exist():
     parser = read("hessian.js")
     for marker in ["vibrationPanel", "frequencyRows", "vibrationPlay", "vibrationStop", "vibrationClear", "vibrationAmplitude", "vibrationSpeed", "modeVectorToggle"]:
         assert f'id="{marker}"' in html
-    for marker in ["clearVibrationData", "selectVibrationMode", "animateVibration", "applyVibrationFrame", "syncNormalModeRenderer"]:
+    for marker in ["clearVibrationData", "clearVibrationView", "selectVibrationMode", "animateVibration", "applyVibrationFrame", "syncNormalModeRenderer"]:
         assert f"function {marker}" in js
     assert 'document.querySelector("#vibrationClear").addEventListener("click"' in js
-    assert "molecule and orbitals retained" in js
+    assert "Normal-mode view cleared at equilibrium geometry; frequencies retained." in js
+    assert "selectVibrationMode(index, { play: mode.vectors.length > 0 });" in js
     assert "frequency_modes" in parser
     assert "normal_mode_eigenvectors" in parser
     assert "infrared_intensities" in parser
