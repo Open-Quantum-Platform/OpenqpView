@@ -61,6 +61,10 @@
     }));
   }
 
+  function emptyVibrationData() {
+    return { modes: [], units: { frequency: "cm-1", ir: "km/mol", raman: "a.u." }, metadata: {} };
+  }
+
   function modeRowsFromSource(source) {
     const rows = source?.vibrations?.modes;
     return Array.isArray(rows) && rows.some((row) => row && typeof row === "object" && !Array.isArray(row))
@@ -70,7 +74,7 @@
 
   function extractVibrations(source, explicitAtomCount) {
     if (!source || typeof source !== "object") {
-      return { modes: [], units: { frequency: "cm-1", ir: "km/mol", raman: "a.u." }, metadata: {} };
+      return emptyVibrationData();
     }
     const rows = modeRowsFromSource(source);
     const frequencies = firstNonEmptyArray(
@@ -123,6 +127,127 @@
     };
   }
 
+  function extractVibrationsFromLog(text, explicitAtomCount) {
+    if (typeof text !== "string" || !text.trim()) return emptyVibrationData();
+    const lines = text.split(/\r?\n/);
+    let tableRows = [];
+
+    lines.forEach((line, lineIndex) => {
+      if (!/Mode\s+Frequency\s*\(\s*cm(?:\^?-?)1\s*\)/i.test(line)) return;
+      const nextRows = [];
+      for (let index = lineIndex + 1; index < lines.length; index += 1) {
+        const row = lines[index].match(/^\s*(\d+)\s+([-+0-9.DEd]+i?)\s+([-+0-9.DEd]+)\s+([-+0-9.DEd]+)\s*$/i);
+        if (!row) {
+          if (nextRows.length) break;
+          continue;
+        }
+        nextRows.push({
+          index: Number(row[1]),
+          frequency: numericValue(row[2]),
+          ir: numericValue(row[3]),
+          raman: numericValue(row[4])
+        });
+      }
+      if (nextRows.length) tableRows = nextRows;
+    });
+
+    if (!tableRows.length) {
+      lines.forEach((line) => {
+        const row = line.match(/PyOQP\s+freq\s+(\d+)\s*:\s*(\S+)/i);
+        if (!row) return;
+        tableRows.push({
+          index: Number(row[1]),
+          frequency: numericValue(row[2]),
+          ir: NaN,
+          raman: NaN
+        });
+      });
+    }
+
+    let modeSectionStart = -1;
+    lines.forEach((line, index) => {
+      if (/Normal mode eigenvectors\s*\(Cartesian,\s*mass-unweighted\)/i.test(line)) {
+        modeSectionStart = index;
+      }
+    });
+
+    const vectorModes = [];
+    if (modeSectionStart >= 0) {
+      for (let index = modeSectionStart + 1; index < lines.length; index += 1) {
+        const frequencyLine = lines[index].match(/^\s*Frequencies\s*--\s*(.+)$/i);
+        if (!frequencyLine) continue;
+        const frequencies = frequencyLine[1]
+          .trim()
+          .split(/\s+/)
+          .map(numericValue)
+          .filter(Number.isFinite);
+        if (!frequencies.length) continue;
+
+        const precedingTokens = (lines[index - 1] || "").trim().split(/\s+/);
+        const modeIndexes = precedingTokens.length === frequencies.length
+          && precedingTokens.every((token) => /^\d+$/.test(token))
+          ? precedingTokens.map(Number)
+          : frequencies.map((_frequency, offset) => vectorModes.length + offset + 1);
+
+        let atomHeader = index + 1;
+        while (atomHeader < Math.min(lines.length, index + 5) && !/\bAtom\s+AN\b/i.test(lines[atomHeader])) {
+          atomHeader += 1;
+        }
+        if (atomHeader >= lines.length || !/\bAtom\s+AN\b/i.test(lines[atomHeader])) continue;
+
+        const atomRows = [];
+        let rowIndex = atomHeader + 1;
+        for (; rowIndex < lines.length; rowIndex += 1) {
+          const atomRow = lines[rowIndex].match(/^\s*(\d+)\s+(\d+(?:\.0+)?)\s+(?:[A-Za-z]{1,3}\s+)?(.+)$/);
+          if (!atomRow) break;
+          const components = atomRow[3]
+            .trim()
+            .split(/\s+/)
+            .map(numericValue);
+          if (components.length < frequencies.length * 3 || components.some((value) => !Number.isFinite(value))) break;
+          atomRows.push(components);
+        }
+
+        if (atomRows.length) {
+          frequencies.forEach((frequency, column) => {
+            vectorModes.push({
+              index: modeIndexes[column],
+              frequency,
+              rawVectors: atomRows.flatMap((components) => components.slice(column * 3, column * 3 + 3)),
+              atomCount: atomRows.length
+            });
+          });
+          index = rowIndex - 1;
+        }
+      }
+    }
+
+    const rawModes = tableRows.length ? tableRows : vectorModes;
+    const modes = rawModes.map((row, position) => {
+      const vectorMode = vectorModes.find((mode) => mode.index === row.index) || vectorModes[position];
+      const frequency = Number.isFinite(vectorMode?.frequency) ? vectorMode.frequency : row.frequency;
+      const ir = numericValue(row.ir);
+      const raman = numericValue(row.raman);
+      return {
+        index: Number(row.index ?? vectorMode?.index ?? position + 1),
+        frequency,
+        imaginary: frequency < 0,
+        ir: Number.isFinite(ir) ? ir : null,
+        raman: Number.isFinite(raman) ? raman : null,
+        vectors: normalizeModeVectors(
+          vectorMode?.rawVectors || [],
+          explicitAtomCount || vectorMode?.atomCount || 0
+        )
+      };
+    }).filter((mode) => Number.isFinite(mode.frequency));
+
+    return {
+      modes,
+      units: { frequency: "cm-1", ir: "km/mol", raman: "a.u." },
+      metadata: modes.length ? { source: "OpenQP log" } : {}
+    };
+  }
+
   function extractHessianSummary(source) {
     if (!Array.isArray(source?.hessian)) return null;
     const dimension = source.hessian.length;
@@ -149,6 +274,7 @@
     atomCountFromSource,
     extractHessianSummary,
     extractVibrations,
+    extractVibrationsFromLog,
     normalizeModeVectors,
     numericValue
   };

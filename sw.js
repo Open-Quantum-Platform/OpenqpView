@@ -1,4 +1,4 @@
-const CACHE_NAME = "openqpview-v62";
+const CACHE_NAME = "openqpview-v63";
 const ASSETS = [
   "./",
   "index.html",
@@ -9,7 +9,9 @@ const ASSETS = [
   "icons/icon.svg",
   "samples/thymine-s0.molden",
   "samples/thymine.xyz",
-  "samples/water-hessian.json"
+  "samples/water-hessian.json",
+  "samples/water-hessian-mo.log",
+  "samples/water-hessian-mo.molden"
 ];
 
 self.addEventListener("install", (event) => {

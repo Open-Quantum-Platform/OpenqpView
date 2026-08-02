@@ -15,6 +15,7 @@ def test_unified_input_panel_controls_exist():
     assert 'id="pasteDataInput"' in html
     assert 'id="loadPastedData"' in html
     assert 'id="clearPastedData"' in html
+    assert 'id="loadHessianLogSample"' in html
     assert 'aria-label="Paste molecular data"' in html
     assert "or drop/paste OpenQP log, Hessian JSON, XYZ, Molden, or cube data" in html
 
@@ -56,6 +57,38 @@ def test_hessian_frequency_and_animation_controls_exist():
     assert "normal_mode_eigenvectors" in parser
     assert "infrared_intensities" in parser
     assert "raman_activities" in parser
+    assert "extractVibrationsFromLog" in parser
+    assert "Normal mode eigenvectors" in parser
+    assert "keepVibrations: true" in js
+
+
+def test_actual_hessian_log_and_matching_molden_sample_exist():
+    js = read("app.js")
+    for sample in [
+        "water-hessian-mo.inp",
+        "water-hessian-mo.log",
+        "water-hessian-mo.hess.json",
+        "water-hessian-mo.freq.molden",
+        "water-hessian-mo.molden",
+    ]:
+        assert (ROOT / "samples" / sample).exists()
+    assert 'fetch("samples/water-hessian-mo.log"' in js
+    assert 'return "samples/water-hessian-mo.molden"' in js
+
+
+def test_initial_threejs_lighting_has_camera_fill():
+    html = read("index.html")
+    js = read("app.js")
+    assert 'id="lightRange" type="range" min="0" max="100" value="68"' in html
+    assert "new THREE.AmbientLight" in js
+    assert "cameraFill.position.copy(camera.position)" in js
+    assert "cameraFill.target.position.copy(controls.target)" in js
+
+
+def test_molden_basis_is_evaluated_in_bohr():
+    js = read("app.js")
+    assert "const angstromToBohr = 1 / BOHR_TO_ANGSTROM;" in js
+    assert "(x - atom[1]) * angstromToBohr" in js
 
 
 def test_hessian_assets_are_loaded_before_the_app():
@@ -73,6 +106,9 @@ if __name__ == "__main__":
         test_paste_controls_have_styles,
         test_auto_spin_controls_volume_renderer,
         test_hessian_frequency_and_animation_controls_exist,
+        test_actual_hessian_log_and_matching_molden_sample_exist,
+        test_initial_threejs_lighting_has_camera_fill,
+        test_molden_basis_is_evaluated_in_bohr,
         test_hessian_assets_are_loaded_before_the_app,
     ]:
         test()
